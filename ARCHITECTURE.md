@@ -550,7 +550,6 @@ Previous-deck thresholds are best-effort defaults, tunable via `--rate-change-pc
 tests/                pytest suite + small offline fixtures
 docs/                 PROMPTS.md
 templates/            Jinja templates (web.py admin)
-tools/                read-only helpers (network capture)
 samples/              large real decks (git-ignored)
 archive/              retired v1 trunk-scraper (git-ignored)
 inbox/                drop folder for the engine (git-ignored)

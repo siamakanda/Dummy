@@ -13,7 +13,6 @@ left), and `DEPLOY.md` (VPS) for the full picture.
     tests/                pytest suite + small fixtures (offline; no portal/email hit)
     docs/                 PROMPTS.md
     templates/            Jinja templates for the web admin (web.py)
-    tools/                read-only helper scripts (network capture)
     samples/              large real sample decks (git-ignored; scale checks)
     archive/              retired v1 trunk-scraper package (git-ignored)
     inbox/                drop folder for the folder-first engine (git-ignored)
