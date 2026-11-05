@@ -7,6 +7,19 @@ the switch portal (dry-run by default).
 See `AGENTS.md` (spec), `ARCHITECTURE.md` (context/architecture), `STATUS.md` (what's done / what's
 left), and `DEPLOY.md` (VPS) for the full picture.
 
+## Repository layout
+
+    *.py                  flat modules (see ARCHITECTURE.md for the map) - kept at the repo root
+    tests/                pytest suite + small fixtures (offline; no portal/email hit)
+    docs/                 PROMPTS.md, final_review.html
+    templates/            Jinja templates for the web admin (web.py)
+    tools/                read-only helper scripts (network capture)
+    samples/              large real sample decks (git-ignored; scale checks)
+    archive/              retired v1 trunk-scraper package (git-ignored)
+    inbox/                drop folder for the folder-first engine (git-ignored)
+    data/                 runtime: SQLite DB, archives, logs, snapshots (git-ignored)
+    .env / .env.example   secrets (ignored) and the committed template
+
 ## Setup
 
     python -m venv .venv
@@ -149,6 +162,25 @@ propose a mapping and queues the item with a ready-made suggestion:
 
 Then re-run the source (or the daemon) to convert + upload. Without an `LLM_API_KEY` the item is still
 queued, just with no suggestion.
+
+## Engine (folder-first core, Windows-local)
+
+A narrower, operator-friendly flow over the same code (branch `engine`): drop decks into `inbox/`, map
+each file to a trunk, convert, and push.
+
+    python engine.py sync                 # read trunks from the switch -> SQLite (+ data/trunks.csv)
+    python engine.py scan                 # scan inbox/ -> one job per deck (with suggestions)
+    python engine.py list --trunks        # jobs + the switch trunks
+    python engine.py map 1 "BTCL TNT TRUNK"
+    python engine.py run                  # convert + validate mapped jobs (dry run)
+    python engine.py push                 # dry-run the upload; add --commit (dev trunk only)
+
+Prefer a UI? The local dashboard (bound to 127.0.0.1, **no login**) wraps the same steps:
+
+    uvicorn engine_web:app --host 127.0.0.1 --port 8090
+
+Map file -> trunk in the browser, click Convert, then Dry-run / Push. The UI never touches the portal
+itself - the shared `engine` functions do, and a real write still needs Push on an allowed trunk.
 
 ## Tests
 

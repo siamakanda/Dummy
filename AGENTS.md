@@ -113,3 +113,11 @@ Python 3.11+, type hints, small functions, `pandas` (all `dtype=str`), `pydantic
 3. Where default 12/6 should come from per carrier when the file lacks it (trunk config vs email).
 4. Portal upload mechanics on `rate_deck_upload.php` (confirmation step? 2FA/CAPTCHA?).
 5. Is the portal restricted by IP (matters for VPS deployment)?
+
+### Resolved (owner)
+- `effective_date`: ISO `YYYY-MM-DD` in the CSV and the portal; deck names use `MM_DD_YYYY`. If the email
+  date and the file's date column disagree, Dummy emits a **warning** (which one wins is still open).
+- `grace_time` when the carrier omits it -> **blank**.
+- Default init/increment when the file lacks them -> **12/6**.
+- Upload confirmation / CAPTCHA -> **none**.
+- IP restriction -> **still unknown** (blocks the VPS decision).

@@ -8,6 +8,9 @@
 # --- Dummy runtime data (archives, SQLite DB, logs, scraped snapshots) -------
 data/
 .state/
+samples/
+archive/
+inbox/
 *.log
 
 # --- Python ------------------------------------------------------------------

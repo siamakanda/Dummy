@@ -250,7 +250,7 @@ persisted in `store.py`.
 
 ## 10. Current implementation notes (for whoever picks this up)
 
-Delivered and green (`python -m pytest -q` → 158 passed, offline):
+Delivered and green (`python -m pytest -q` → 162 passed, offline):
 
 - **`cleaner.read_clean(path) -> DataFrame[str]`** — `.csv`/`.xlsx`/`.zip`; UTF-8-sig (BOM) with
   latin-1 fallback; trims cells; drops fully blank rows; drops `#` comment lines and **detects a
@@ -540,6 +540,45 @@ Previous-deck thresholds are best-effort defaults, tunable via `--rate-change-pc
 - Bug fixes: `to_template` no longer writes the literal `"None"` when a config row has NULL defaults;
   `store.all_trunks()` now exposes `name_aliases`.
 - Verified: 158 tests; live dry-run of the forwarded BTCL deck → `BTCL TNT TRUNK 11_15_2026: 205,862 rows`.
+
+---
+
+## Repository layout
+
+```
+*.py                  flat modules (kept at the repo root)
+tests/                pytest suite + small offline fixtures
+docs/                 PROMPTS.md, final_review.html
+templates/            Jinja templates (web.py admin)
+tools/                read-only helpers (network capture)
+samples/              large real decks (git-ignored)
+archive/              retired v1 trunk-scraper (git-ignored)
+inbox/                drop folder for the engine (git-ignored)
+data/                 runtime DB / archives / logs (git-ignored)
+```
+
+Boundaries: portal URL only in `config.py`; Playwright selectors only in `portal.py`; HTML parsing only in
+`parse.py`.
+
+## Engine (folder-first, Windows-local) — M24 (built)
+
+A narrower UX over the **same** engine: no email/IMAP, no daemon. Implemented as `engine.py` (CLI) +
+`engine_web.py` (localhost dashboard) with a `deck_jobs` table.
+
+```
+sync -> scan -> map (local web dashboard) -> convert -> dry-run -> approve -> push
+```
+
+- `engine.py` — CLI: `sync` (trunks → SQLite), `scan` (`inbox/` → jobs), `run` (convert → dry-run),
+  `push` (**create → upload → assign → verify**, orphan cleanup on failure).
+- `engine_web.py` — local dashboard on `127.0.0.1` (**no login**; CSRF kept) for the human file→trunk
+  mapping and approval; action failures show as an on-page banner.
+- `inbox/` — the drop folder; jobs live in the `deck_jobs` table.
+- Reuses `scrape_trunks`, `input_sources.DirectorySource`, `trunk_matcher`, `cleaner` / `mapper` /
+  `validator`, `upload.execute`, `store`, `notify`.
+
+**Deployment output:** local dev = CLI; server/VPS = `orchestrator.py --loop` + `web.py` behind Caddy (TLS)
++ email notifications — no separate "output type" is needed.
 
 ---
 

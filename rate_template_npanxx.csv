@@ -1,5 +1,0 @@
-prefix,destination,inter_rate,intra_rate,indeterminate_rate,connect_fee,init_duration,increment,grace_time,effective_date
-1201200,NANPA,0.0012,0.0012,0.0012,0,12,6,,
-1201201,NANPA,0.00234,0.00234,0.00234,0,12,6,,
-1201202,NANPA,0.0012,0.0012,0.0012,0,12,6,,
-,,,,,,,,,

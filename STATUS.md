@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M23 done · `pytest` → **158 passed** (offline)_
+_2026-11-04 · M1–M24 done · `pytest` → **162 passed** (offline)_
 
 ## TL;DR
 
@@ -321,3 +321,29 @@ LLM can only propose real headers); dry-run + audit trail + idempotency; async h
   `DRY RUN: BTCL TNT TRUNK 11_15_2026: 205862 rows, 205862 changes`.
 - Verified: 158 tests. Also added a proper `.gitignore` (`.env` kept out, `.env.example` kept in,
   `data/`, caches, IDE/OS files).
+
+---
+
+## 24. Repo reorg + core-engine plan (done / planned)
+
+Decisions (owner): core engine = **Windows-local, folder-first**, reusing modules; human mapping via a
+**local web dashboard** (127.0.0.1); **stay flat** (no `dummy/` package); VPS output = **web + email**.
+
+Repo organisation: sample decks → `samples/`, retired v1 scraper → `archive/`, `PROMPTS.md` → `docs/`,
+new `inbox/` drop folder, stray `11` removed — `samples/`, `archive/`, `inbox/` git-ignored. `.gitignore`
+extended.
+
+Answers logged: `grace_time` blank; default **12/6**; no CAPTCHA; portal IP restriction still unknown.
+`AGENTS.md` §10 updated.
+
+Engine **built** (branch `engine`): `engine.py` (`sync/scan/list/map/run/push`), `engine_web.py` (localhost
+dashboard), `deck_jobs` table. Smoke test: `scan → map → run` gave `dry_run` (237,079 rows) → `push`
+dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
+- Fixed a dashboard bug: Playwright's **sync** API ran inside FastAPI's event loop (commit Push 500'd);
+  push/run now run in a **worker thread**, and a browser is opened only for an **allowed** trunk.
+- Dashboard: **no login** (localhost-only tool); CSRF kept; action failures show as an on-page banner
+  instead of a 500.
+- **Fixed:** the engine push now does **create → upload → assign → verify** — it previously only created +
+  uploaded, so the trunk was never actually updated — and it deletes the orphan deck on any failure.
+- Verified: **165 tests**. First real write on BTCL TNT TRUNK made **deck 187** (uploaded but *not*
+  assigned, due to the old code) — clear it with `python cleanup.py --orphans --min-age-days 0`.
