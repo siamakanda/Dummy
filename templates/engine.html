@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dummy engine - deck inbox</title>
+  <style>
+    :root{
+      --bg:#f5f7fa; --card:#fff; --ink:#101828; --muted:#667085; --line:#e4e7ec;
+      --brand:#2b5cff; --amber:#b54708; --amberbg:#fffaeb; --blue:#175cd3; --bluebg:#eff4ff;
+      --purple:#5925dc; --purplebg:#f4f3ff; --green:#067647; --greenbg:#ecfdf3;
+      --red:#b42318; --redbg:#fef3f2; --slatebg:#f2f4f7; --slate:#475467;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);
+      font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+    header{background:linear-gradient(135deg,#101828,#1f3b73 55%,#2b5cff);color:#fff;
+      padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+    header .brand{font-size:15px;font-weight:650;letter-spacing:.2px;display:flex;gap:9px;align-items:center}
+    header .dot{width:9px;height:9px;border-radius:50%;background:#5ce1a0;box-shadow:0 0 0 3px rgba(92,225,160,.25)}
+    header .sub{color:#c9d6ff;font-weight:400;font-size:12.5px;margin-left:6px}
+    header button{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.28);
+      border-radius:9px;padding:7px 13px;cursor:pointer;font-size:13px}
+    header button:hover{background:rgba(255,255,255,.24)}
+    .wrap{max-width:1180px;margin:0 auto;padding:22px}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+    .stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 16px}
+    .stat .n{font-size:24px;font-weight:750;line-height:1.1}
+    .stat .l{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+    .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+    .toolbar .hint{color:var(--muted);font-size:12.5px;margin-left:auto}
+    button.btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px;
+      cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ink)}
+    button.btn:hover{background:#f9fafb}
+    button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+    button.primary:hover{filter:brightness(1.06)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:15px;overflow:hidden;
+      box-shadow:0 1px 2px rgba(16,24,40,.04)}
+    table{width:100%;border-collapse:collapse}
+    thead th{background:#f9fafb;color:var(--muted);font-size:11.5px;text-transform:uppercase;
+      letter-spacing:.05em;text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:650}
+    td{padding:13px 15px;border-bottom:1px solid var(--line);vertical-align:top}
+    tbody tr:last-child td{border-bottom:0}
+    tbody tr:hover{background:#fbfcfe}
+    .file{font-weight:650}
+    .sub{color:var(--muted);font-size:12.5px;margin-top:3px}
+    .trunc{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .chips{margin-top:7px;display:flex;flex-wrap:wrap;gap:6px}
+    .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:2px 10px;
+      font-size:12px;cursor:pointer;color:var(--slate)}
+    .chip:hover{border-color:var(--brand);color:var(--brand);background:#f4f7ff}
+    .badge{display:inline-block;border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700;white-space:nowrap}
+    .b-unmapped{background:var(--amberbg);color:var(--amber)}
+    .b-mapped{background:var(--bluebg);color:var(--blue)}
+    .b-dry_run{background:var(--purplebg);color:var(--purple)}
+    .b-uploaded{background:var(--greenbg);color:var(--green)}
+    .b-failed,.b-validation_error{background:var(--redbg);color:var(--red)}
+    .b-skipped{background:var(--slatebg);color:var(--slate)}
+    select{width:100%;max-width:290px;padding:8px 9px;border:1px solid var(--line);border-radius:9px;
+      background:#fff;font-size:13.5px;color:var(--ink)}
+    .row-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+    form.inline{display:inline}
+    .muted{color:var(--muted)}
+    .empty{padding:46px 20px;text-align:center;color:var(--muted)}
+    .empty code{background:var(--slatebg);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+    .localpill{color:#c9d6ff;font-size:12px;border:1px solid rgba(255,255,255,.25);
+      border-radius:999px;padding:4px 11px}
+    .banner{background:var(--redbg);border:1px solid #fecdca;color:var(--red);border-radius:11px;
+      padding:11px 14px;margin-bottom:14px;font-weight:600}
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>Dummy engine<span class="sub">deck inbox &rarr; switch</span></div>
+  <span class="localpill">local &middot; 127.0.0.1</span>
+</header>
+
+<div class="wrap">
+  {% if error %}<div class="banner">Action failed: {{ error }}</div>{% endif %}
+  <div class="stats">
+    <div class="stat"><div class="n">{{ stats.get('total', 0) }}</div><div class="l">Deck files</div></div>
+    <div class="stat"><div class="n">{{ stats.get('unmapped', 0) }}</div><div class="l">Unmapped</div></div>
+    <div class="stat"><div class="n">{{ stats.get('mapped', 0) }}</div><div class="l">Mapped</div></div>
+    <div class="stat"><div class="n">{{ stats.get('dry_run', 0) }}</div><div class="l">Ready to push</div></div>
+    <div class="stat"><div class="n">{{ stats.get('uploaded', 0) }}</div><div class="l">Uploaded</div></div>
+    <div class="stat"><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) }}</div><div class="l">Problems</div></div>
+  </div>
+
+  <div class="toolbar">
+    <form class="inline" method="post" action="/scan">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button class="btn">Scan inbox/</button>
+    </form>
+    <form class="inline" method="post" action="/run">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button class="btn primary">Convert mapped jobs</button>
+    </form>
+    <span class="hint">{{ trunks | length }} trunks on the switch &middot; map each file below</span>
+  </div>
+
+  <div class="card">
+    {% if jobs %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width:46px">#</th>
+          <th>Deck file</th>
+          <th style="width:320px">Map to trunk</th>
+          <th style="width:170px">Status</th>
+          <th style="width:90px">Rows</th>
+          <th style="width:200px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for job in jobs %}
+        <tr>
+          <td class="muted">{{ job.job_id }}</td>
+          <td>
+            <div class="file">{{ job.file_name }}</div>
+            {% if job.effective_date %}<div class="sub">effective {{ job.effective_date }}</div>{% endif %}
+            {% if job.candidates %}
+            <div class="sub" style="margin-top:7px">suggested</div>
+            <div class="chips">
+              {% for c in job.candidates[:4] %}
+              <span class="chip" onclick="pick({{ job.job_id }}, {{ c.trunk_id }})"
+                    title="match score {{ '%.2f' | format(c.score) }}">{{ c.trunk_name }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="/map/{{ job.job_id }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <select name="trunk_id" id="sel-{{ job.job_id }}">
+                <option value="">-- choose a trunk --</option>
+                {% for carrier, group in trunks | groupby('carrier_name') %}
+                <optgroup label="{{ carrier }}">
+                  {% for t in group %}
+                  <option value="{{ t.trunk_id }}"{% if job.trunk_id == t.trunk_id %} selected{% endif %}>{{ t.trunk_name }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endfor %}
+              </select>
+              <div class="row-actions"><button class="btn">Save mapping</button></div>
+            </form>
+          </td>
+          <td>
+            <span class="badge b-{{ job.status }}">{{ job.status.replace('_', ' ') }}</span>
+            {% if job.notes %}<div class="sub trunc" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
+          </td>
+          <td>{{ job.rows if job.rows else '&mdash;' | safe }}</td>
+          <td>
+            {% if job.status == 'dry_run' %}
+            <form class="inline" method="post" action="/push/{{ job.job_id }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn">Dry-run</button>
+            </form>
+            <div class="row-actions">
+              <form class="inline" method="post" action="/push/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="commit" value="1">
+                <button class="btn primary">Push to switch</button>
+              </form>
+            </div>
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+      No deck files yet.<br><br>
+      Drop rate-deck files (csv / xlsx / zip) into the <code>inbox/</code> folder,
+      then click <strong>Scan inbox/</strong>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  function pick(jobId, trunkId) {
+    var sel = document.getElementById('sel-' + jobId);
+    if (sel) { sel.value = String(trunkId); sel.scrollIntoView({ block: 'nearest' }); }
+  }
+</script>
+</body>
+</html>

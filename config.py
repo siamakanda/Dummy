@@ -31,6 +31,7 @@ DECK_NAME_DATE_FORMAT = os.getenv("DECK_NAME_DATE_FORMAT", "%m_%d_%Y")
 
 # Mailbox + archive (M5)
 ARCHIVE_DIR = DATA_DIR / "archive"
+INBOX_DIR = Path(os.getenv("INBOX_DIR", str(ROOT / "inbox")))   # folder-first engine drop folder
 IMAP_HOST = os.getenv("IMAP_HOST", "")
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 IMAP_USER = os.getenv("IMAP_USER", "")

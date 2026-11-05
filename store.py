@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS pending (
     resolved_at       TEXT,
     resolved_by       TEXT
 );
+CREATE TABLE IF NOT EXISTS deck_jobs (
+    job_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id      TEXT UNIQUE,
+    file_path      TEXT,
+    file_name      TEXT,
+    candidates     TEXT DEFAULT '[]',
+    trunk_id       INTEGER,
+    status         TEXT DEFAULT 'unmapped',   -- unmapped | mapped | dry_run | uploaded | failed | skipped
+    effective_date TEXT,
+    converted_path TEXT,
+    rows           INTEGER DEFAULT 0,
+    changes        INTEGER DEFAULT 0,
+    notes          TEXT,
+    created_at     TEXT,
+    updated_at     TEXT
+);
 """
 
 def _now() -> str:
@@ -358,6 +374,51 @@ class Store:
                 "UPDATE pending SET status = 'open', kind = ?, trunk_id = COALESCE(?, trunk_id), "
                 "reasons = ?, resolved_at = NULL, resolved_by = NULL WHERE id = ?",
                 (kind, trunk_id, json.dumps(reasons or []), pending_id))
+
+    # ---- folder-first engine jobs ---------------------------------------
+    def add_job(self, source_id: str, *, file_path="", file_name="", candidates=None,
+                effective_date="") -> int | None:
+        """Create a deck job (idempotent by source_id); returns None if it already existed."""
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO deck_jobs(source_id, file_path, file_name, candidates, effective_date, "
+                "status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, 'unmapped', ?, ?) "
+                "ON CONFLICT(source_id) DO NOTHING",
+                (source_id, str(file_path), file_name, json.dumps(candidates or []),
+                 effective_date, _now(), _now()))
+        return int(cursor.lastrowid) if cursor.rowcount else None
+
+    @staticmethod
+    def _job(row) -> dict:
+        item = dict(row)
+        item["candidates"] = json.loads(item.get("candidates") or "[]")
+        return item
+
+    def list_jobs(self, status: str | None = None) -> list[dict]:
+        query = "SELECT * FROM deck_jobs"
+        args: tuple = ()
+        if status:
+            query += " WHERE status = ?"
+            args = (status,)
+        query += " ORDER BY job_id DESC"
+        return [self._job(row) for row in self.conn.execute(query, args)]
+
+    def get_job(self, job_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM deck_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        return self._job(row) if row else None
+
+    def set_job_mapping(self, job_id: int, trunk_id: int) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE deck_jobs SET trunk_id = ?, status = 'mapped', updated_at = ? "
+                              "WHERE job_id = ?", (trunk_id, _now(), job_id))
+
+    def update_job(self, job_id: int, **fields) -> None:
+        if not fields:
+            return
+        columns = ", ".join(f"{name} = ?" for name in fields)
+        with self.conn:
+            self.conn.execute(f"UPDATE deck_jobs SET {columns}, updated_at = ? WHERE job_id = ?",
+                              (*fields.values(), _now(), job_id))
 
     # ---- read helpers for the web admin ---------------------------------
     def list_runs(self, limit: int = 30) -> list[dict]:
