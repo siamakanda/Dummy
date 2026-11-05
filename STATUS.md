@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M25 done · `pytest` → **169 passed** (offline)_
+_2026-11-04 · M1–M26 done · `pytest` → **170 passed** (offline)_
 
 ## TL;DR
 
@@ -358,3 +358,13 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   `python launcher.py <action>`.
 - Default port 8090 (`set DUMMY_PORT=...` to change); handles missing deps and stdin EOF gracefully.
 - Verified: **169 tests**.
+
+---
+
+## 26. Dashboard UI (done)
+
+- Redesigned `templates/engine.html`: app shell (brand + "local" pill), headline with primary actions, six
+  icon stat cards, a card-wrapped table with status chips, effective-date tags, clickable suggestion chips
+  (2 + "+N more"), a full-width trunk select, and **per-row actions** (Convert for mapped, Dry-run / Push
+  for ready, "done" for uploaded). Added `POST /run/{job_id}` for the per-row Convert button.
+- Verified: **170 tests**.

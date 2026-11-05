@@ -184,3 +184,27 @@ def test_engine_web_push_commit_refuses_unapproved_trunk(tmp_path):
     check = Store(db)
     assert check.get_job(job_id)["status"] == "dry_run"      # refused: nothing written
     check.close()
+
+
+def test_engine_web_run_one_converts_a_mapped_job(tmp_path, monkeypatch):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    (tmp_path / "inbox" / BLC.name).write_bytes(BLC.read_bytes())
+    db = tmp_path / "dummy.db"
+    store = make_store(tmp_path)
+    engine.cmd_scan(store, NS(dir=None))
+    job_id = store.list_jobs()[0]["job_id"]
+    engine.cmd_map(store, NS(job=job_id, trunk=DEV_TRUNK))
+    store.close()
+
+    client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
+    dash = client.get("/")
+    client.post(f"/run/{job_id}", data={"_csrf": _csrf(dash.text)})   # the per-row Convert button
+
+    check = Store(db)
+    assert check.get_job(job_id)["status"] == "dry_run"
+    check.close()

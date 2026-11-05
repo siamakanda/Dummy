@@ -3,132 +3,287 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dummy engine - deck inbox</title>
+  <title>Dummy - deck inbox</title>
   <style>
     :root{
-      --bg:#f5f7fa; --card:#fff; --ink:#101828; --muted:#667085; --line:#e4e7ec;
-      --brand:#2b5cff; --amber:#b54708; --amberbg:#fffaeb; --blue:#175cd3; --bluebg:#eff4ff;
-      --purple:#5925dc; --purplebg:#f4f3ff; --green:#067647; --greenbg:#ecfdf3;
-      --red:#b42318; --redbg:#fef3f2; --slatebg:#f2f4f7; --slate:#475467;
+      --bg:#f5f6fb; --surface:#ffffff; --surface-2:#f9fafd; --ink:#0f172a; --ink-2:#475569;
+      --muted:#64748b; --faint:#94a3b8; --line:#e8ecf3; --line-2:#eef2f8;
+      --brand:#4f46e5; --brand-2:#6366f1;
+      --green:#12b76a; --green-bg:#ecfdf3; --amber:#b54708; --amber-bg:#fffaeb;
+      --blue:#175cd3; --blue-bg:#eff6ff; --violet:#6941c6; --violet-bg:#f5f3ff;
+      --red:#d92d20; --red-bg:#fef3f2; --slate:#475467; --slate-bg:#f2f4f7;
+      --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+      --shadow-md:0 6px 20px rgba(16,24,40,.07),0 2px 6px rgba(16,24,40,.04);
+      --radius:16px;
     }
     *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--ink);
-      font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    header{background:linear-gradient(135deg,#101828,#1f3b73 55%,#2b5cff);color:#fff;
-      padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
-    header .brand{font-size:15px;font-weight:650;letter-spacing:.2px;display:flex;gap:9px;align-items:center}
-    header .dot{width:9px;height:9px;border-radius:50%;background:#5ce1a0;box-shadow:0 0 0 3px rgba(92,225,160,.25)}
-    header .sub{color:#c9d6ff;font-weight:400;font-size:12.5px;margin-left:6px}
-    header button{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.28);
-      border-radius:9px;padding:7px 13px;cursor:pointer;font-size:13px}
-    header button:hover{background:rgba(255,255,255,.24)}
-    .wrap{max-width:1180px;margin:0 auto;padding:22px}
-    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
-    .stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 16px}
-    .stat .n{font-size:24px;font-weight:750;line-height:1.1}
-    .stat .l{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
-    .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
-    .toolbar .hint{color:var(--muted);font-size:12.5px;margin-left:auto}
-    button.btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px;
-      cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ink)}
-    button.btn:hover{background:#f9fafb}
-    button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
-    button.primary:hover{filter:brightness(1.06)}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:15px;overflow:hidden;
-      box-shadow:0 1px 2px rgba(16,24,40,.04)}
-    table{width:100%;border-collapse:collapse}
-    thead th{background:#f9fafb;color:var(--muted);font-size:11.5px;text-transform:uppercase;
-      letter-spacing:.05em;text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:650}
-    td{padding:13px 15px;border-bottom:1px solid var(--line);vertical-align:top}
+    body{margin:0;background:
+        radial-gradient(1200px 460px at 10% -12%, #e9edff 0%, rgba(233,237,255,0) 60%),
+        radial-gradient(900px 420px at 100% 0%, #eef7ff 0%, rgba(238,247,255,0) 55%),
+        var(--bg);
+      color:var(--ink);
+      font:14.5px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      -webkit-font-smoothing:antialiased}
+
+    /* top bar */
+    .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
+      gap:16px;padding:12px 26px;background:rgba(255,255,255,.84);backdrop-filter:blur(12px);
+      border-bottom:1px solid var(--line)}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff;
+      background:linear-gradient(150deg,#6366f1,#4f46e5 55%,#4338ca);
+      box-shadow:0 8px 18px rgba(79,70,229,.35)}
+    .brand .t{font-weight:750;font-size:15.5px;letter-spacing:.2px;line-height:1.1}
+    .brand .s{color:var(--ink-2);font-size:12px;margin-top:2px}
+    .pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
+      background:var(--surface);border-radius:999px;padding:6px 12px;font-size:12.5px;color:var(--ink-2)}
+    .live{width:8px;height:8px;border-radius:50%;background:var(--green);
+      box-shadow:0 0 0 3px rgba(18,183,106,.18)}
+
+    /* page */
+    .page{max-width:1240px;margin:0 auto;padding:26px 26px 70px}
+    .headline{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;
+      margin:6px 0 20px}
+    .headline h1{margin:0;font-size:26px;letter-spacing:-.3px;font-weight:780}
+    .headline p{margin:6px 0 0;color:var(--ink-2);max-width:62ch}
+    .headline code{background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;border-radius:6px;
+      padding:1px 7px;font-size:12.5px}
+    .headline-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+    /* buttons */
+    .btn{appearance:none;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
+      background:var(--surface);color:var(--ink);border-radius:11px;padding:10px 15px;font-size:13.5px;
+      font-weight:650;cursor:pointer;box-shadow:var(--shadow-sm);transition:.16s ease;white-space:nowrap}
+    .btn:hover{border-color:#d7deea;transform:translateY(-1px);box-shadow:var(--shadow-md)}
+    .btn:active{transform:translateY(0)}
+    .btn svg{width:16px;height:16px}
+    .btn.primary{background:linear-gradient(180deg,var(--brand-2),var(--brand));border-color:var(--brand);
+      color:#fff;box-shadow:0 8px 18px rgba(79,70,229,.28)}
+    .btn.primary:hover{filter:brightness(1.04)}
+    form.inline{display:inline;margin:0}
+
+    /* alert */
+    .alert{display:flex;gap:10px;align-items:flex-start;background:var(--red-bg);
+      border:1px solid #fecdca;color:#912018;border-radius:13px;padding:12px 15px;margin-bottom:18px;
+      font-weight:600}
+    .alert svg{flex:none;width:18px;height:18px;margin-top:1px}
+
+    /* stats */
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px;margin-bottom:20px}
+    .stat{display:flex;align-items:center;gap:13px;background:var(--surface);border:1px solid var(--line);
+      border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-sm);transition:.16s ease}
+    .stat:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+    .stat .ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none}
+    .stat .ico svg{width:19px;height:19px}
+    .stat .n{font-size:22px;font-weight:800;line-height:1.05;letter-spacing:-.4px}
+    .stat .l{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-top:3px}
+    .i-indigo{background:#eef2ff;color:#4f46e5}.i-amber{background:var(--amber-bg);color:var(--amber)}
+    .i-blue{background:var(--blue-bg);color:var(--blue)}.i-violet{background:var(--violet-bg);color:var(--violet)}
+    .i-green{background:var(--green-bg);color:#067647}.i-red{background:var(--red-bg);color:var(--red)}
+
+    /* panel / table */
+    .panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;
+      box-shadow:var(--shadow-md);overflow:hidden}
+    .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:15px 20px;border-bottom:1px solid var(--line-2)}
+    .panel-head h2{margin:0;font-size:14.5px;font-weight:750;letter-spacing:.1px}
+    .panel-head .muted{color:var(--muted);font-size:12.5px}
+    table{width:100%;border-collapse:separate;border-spacing:0}
+    thead th{position:sticky;top:63px;background:var(--surface-2);z-index:1;color:var(--muted);
+      font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:left;
+      padding:10px 20px;border-bottom:1px solid var(--line-2)}
+    tbody td{padding:15px 20px;border-bottom:1px solid var(--line-2);vertical-align:top}
     tbody tr:last-child td{border-bottom:0}
-    tbody tr:hover{background:#fbfcfe}
-    .file{font-weight:650}
-    .sub{color:var(--muted);font-size:12.5px;margin-top:3px}
-    .trunc{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .chips{margin-top:7px;display:flex;flex-wrap:wrap;gap:6px}
-    .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:2px 10px;
-      font-size:12px;cursor:pointer;color:var(--slate)}
-    .chip:hover{border-color:var(--brand);color:var(--brand);background:#f4f7ff}
-    .badge{display:inline-block;border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700;white-space:nowrap}
-    .b-unmapped{background:var(--amberbg);color:var(--amber)}
-    .b-mapped{background:var(--bluebg);color:var(--blue)}
-    .b-dry_run{background:var(--purplebg);color:var(--purple)}
-    .b-uploaded{background:var(--greenbg);color:var(--green)}
-    .b-failed,.b-validation_error{background:var(--redbg);color:var(--red)}
-    .b-skipped{background:var(--slatebg);color:var(--slate)}
-    select{width:100%;max-width:290px;padding:8px 9px;border:1px solid var(--line);border-radius:9px;
-      background:#fff;font-size:13.5px;color:var(--ink)}
-    .row-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
-    form.inline{display:inline}
+    tbody tr:nth-child(even){background:#fcfdff}
+    tbody tr{transition:background .12s ease}
+    tbody tr:hover{background:#f8faff}
+
+    .num{color:var(--faint);font-variant-numeric:tabular-nums;font-weight:600}
+    .file{font-weight:750;font-size:14.5px;letter-spacing:-.1px;word-break:break-word}
+    .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+    .tag{display:inline-flex;align-items:center;gap:5px;background:var(--slate-bg);color:var(--slate);
+      border-radius:7px;padding:2px 8px;font-size:11.5px;font-weight:600}
+    .tag svg{width:12px;height:12px}
+
+    /* suggestions */
+    .sugg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px}
+    .sugg .lab{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;
+      font-weight:700;margin-right:2px}
+    .chip{display:inline-block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:3px 10px;
+      font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:.12s ease}
+    .chip:hover{border-color:#c7d2fe;background:#eef2ff;color:#3730a3}
+    .chip.more{cursor:default;background:transparent;border-style:dashed;color:var(--faint)}
+    .done{display:inline-flex;align-items:center;gap:6px;color:#067647;font-weight:700;font-size:12.5px}
+    .done svg{width:16px;height:16px}
+
+    /* status */
+    .badge{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:4px 11px;
+      font-size:12px;font-weight:700;white-space:nowrap;text-transform:capitalize}
+    .badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+    .st-unmapped{background:var(--amber-bg);color:var(--amber)}
+    .st-mapped{background:var(--blue-bg);color:var(--blue)}
+    .st-dry_run{background:var(--violet-bg);color:var(--violet)}
+    .st-uploaded{background:var(--green-bg);color:#067647}
+    .st-failed,.st-validation_error{background:var(--red-bg);color:var(--red)}
+    .st-skipped{background:var(--slate-bg);color:var(--slate)}
+    .note{color:var(--faint);font-size:11.5px;margin-top:5px;max-width:210px;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    /* form controls */
+    select{width:100%;appearance:none;padding:10px 34px 10px 12px;border:1px solid var(--line);
+      border-radius:11px;background:var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%2394a3b8' stroke-width='2'><path d='M3 5l4 4 4-4'/></svg>") no-repeat right 12px center;
+      font-size:13.5px;color:var(--ink);cursor:pointer;box-shadow:var(--shadow-sm)}
+    select:focus{outline:none;border-color:#c7d2fe;box-shadow:0 0 0 4px rgba(99,102,241,.14)}
+    .save{margin-top:8px}
+    .save .btn{padding:8px 12px;font-size:13px}
+
+    .rows{font-variant-numeric:tabular-nums;font-weight:700}
+    .actions{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
     .muted{color:var(--muted)}
-    .empty{padding:46px 20px;text-align:center;color:var(--muted)}
-    .empty code{background:var(--slatebg);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
-    .localpill{color:#c9d6ff;font-size:12px;border:1px solid rgba(255,255,255,.25);
-      border-radius:999px;padding:4px 11px}
-    .banner{background:var(--redbg);border:1px solid #fecdca;color:var(--red);border-radius:11px;
-      padding:11px 14px;margin-bottom:14px;font-weight:600}
+
+    /* empty */
+    .empty{padding:64px 24px;text-align:center;color:var(--ink-2)}
+    .empty .eico{width:64px;height:64px;margin:0 auto 16px;border-radius:18px;display:grid;place-items:center;
+      background:#eef2ff;color:#4f46e5}
+    .empty .eico svg{width:30px;height:30px}
+    .empty h3{margin:0 0 6px;font-size:16px}
+    .empty p{margin:0;color:var(--muted)}
+    .empty code{background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;border-radius:6px;padding:1px 7px}
+
+    @media (max-width:760px){
+      .page{padding:18px 14px 60px}
+      thead{display:none}
+      tbody tr{border-bottom:1px solid var(--line);display:block}
+      tbody td{display:block;border-bottom:1px solid var(--line-2);padding:10px 16px}
+      tbody td:before{content:attr(data-l);display:block;color:var(--faint);font-size:10.5px;
+        text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+      .note{max-width:none}
+    }
   </style>
 </head>
 <body>
-<header>
-  <div class="brand"><span class="dot"></span>Dummy engine<span class="sub">deck inbox &rarr; switch</span></div>
-  <span class="localpill">local &middot; 127.0.0.1</span>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
+    </span>
+    <div>
+      <div class="t">Dummy</div>
+      <div class="s">carrier rate-deck engine</div>
+    </div>
+  </div>
+  <div class="topright">
+    <span class="pill"><span class="live"></span>local &middot; 127.0.0.1:8090</span>
+  </div>
 </header>
 
-<div class="wrap">
-  {% if error %}<div class="banner">Action failed: {{ error }}</div>{% endif %}
-  <div class="stats">
-    <div class="stat"><div class="n">{{ stats.get('total', 0) }}</div><div class="l">Deck files</div></div>
-    <div class="stat"><div class="n">{{ stats.get('unmapped', 0) }}</div><div class="l">Unmapped</div></div>
-    <div class="stat"><div class="n">{{ stats.get('mapped', 0) }}</div><div class="l">Mapped</div></div>
-    <div class="stat"><div class="n">{{ stats.get('dry_run', 0) }}</div><div class="l">Ready to push</div></div>
-    <div class="stat"><div class="n">{{ stats.get('uploaded', 0) }}</div><div class="l">Uploaded</div></div>
-    <div class="stat"><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) }}</div><div class="l">Problems</div></div>
-  </div>
+<main class="page">
+  <section class="headline">
+    <div>
+      <h1>Deck inbox</h1>
+      <p>Drop rate decks in <code>inbox/</code>, map each file to a trunk, convert to our template, then push to the switch.</p>
+    </div>
+    <div class="headline-actions">
+      <form class="inline" method="post" action="/scan">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+          Scan inbox/
+        </button>
+      </form>
+      <form class="inline" method="post" action="/run">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="btn primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 9A8 8 0 0 0 6 6M4 15a8 8 0 0 0 14 3"/></svg>
+          Convert mapped
+        </button>
+      </form>
+    </div>
+  </section>
 
-  <div class="toolbar">
-    <form class="inline" method="post" action="/scan">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <button class="btn">Scan inbox/</button>
-    </form>
-    <form class="inline" method="post" action="/run">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <button class="btn primary">Convert mapped jobs</button>
-    </form>
-    <span class="hint">{{ trunks | length }} trunks on the switch &middot; map each file below</span>
+  {% if error %}
+  <div class="alert">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+    <span>Action failed: {{ error }}</span>
   </div>
+  {% endif %}
 
-  <div class="card">
+  <section class="stats">
+    <div class="stat">
+      <span class="ico i-indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h7l2 3h7v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg></span>
+      <div><div class="n">{{ stats.get('total', 0) }}</div><div class="l">Deck files</div></div>
+    </div>
+    <div class="stat">
+      <span class="ico i-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span>
+      <div><div class="n">{{ stats.get('unmapped', 0) }}</div><div class="l">Unmapped</div></div>
+    </div>
+    <div class="stat">
+      <span class="ico i-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg></span>
+      <div><div class="n">{{ stats.get('mapped', 0) }}</div><div class="l">Mapped</div></div>
+    </div>
+    <div class="stat">
+      <span class="ico i-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg></span>
+      <div><div class="n">{{ stats.get('dry_run', 0) }}</div><div class="l">Ready to push</div></div>
+    </div>
+    <div class="stat">
+      <span class="ico i-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+      <div><div class="n">{{ stats.get('uploaded', 0) }}</div><div class="l">Uploaded</div></div>
+    </div>
+    <div class="stat">
+      <span class="ico i-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+      <div><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) }}</div><div class="l">Problems</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Files</h2>
+      <span class="muted">{{ trunks | length }} trunks on the switch</span>
+    </div>
+
     {% if jobs %}
     <table>
       <thead>
         <tr>
-          <th style="width:46px">#</th>
+          <th style="width:52px">#</th>
           <th>Deck file</th>
-          <th style="width:320px">Map to trunk</th>
-          <th style="width:170px">Status</th>
-          <th style="width:90px">Rows</th>
-          <th style="width:200px">Actions</th>
+          <th style="width:310px">Map to trunk</th>
+          <th style="width:150px">Status</th>
+          <th style="width:92px">Rows</th>
+          <th style="width:170px">Actions</th>
         </tr>
       </thead>
       <tbody>
       {% for job in jobs %}
         <tr>
-          <td class="muted">{{ job.job_id }}</td>
-          <td>
+          <td data-l="#" class="num">{{ job.job_id }}</td>
+          <td data-l="Deck file">
             <div class="file">{{ job.file_name }}</div>
-            {% if job.effective_date %}<div class="sub">effective {{ job.effective_date }}</div>{% endif %}
+            {% if job.effective_date %}
+            <div class="meta">
+              <span class="tag">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                effective {{ job.effective_date }}
+              </span>
+            </div>
+            {% endif %}
             {% if job.candidates %}
-            <div class="sub" style="margin-top:7px">suggested</div>
-            <div class="chips">
-              {% for c in job.candidates[:4] %}
+            <div class="sugg">
+              <span class="lab">suggested</span>
+              {% for c in job.candidates[:2] %}
               <span class="chip" onclick="pick({{ job.job_id }}, {{ c.trunk_id }})"
                     title="match score {{ '%.2f' | format(c.score) }}">{{ c.trunk_name }}</span>
               {% endfor %}
+              {% if job.candidates | length > 2 %}
+              <span class="chip more" title="{% for c in job.candidates[2:] %}{{ c.trunk_name }}{% if not loop.last %}, {% endif %}{% endfor %}">+{{ job.candidates | length - 2 }} more</span>
+              {% endif %}
             </div>
             {% endif %}
           </td>
-          <td>
+          <td data-l="Map to trunk">
             <form method="post" action="/map/{{ job.job_id }}">
               <input type="hidden" name="_csrf" value="{{ csrf }}">
               <select name="trunk_id" id="sel-{{ job.job_id }}">
@@ -141,27 +296,37 @@
                 </optgroup>
                 {% endfor %}
               </select>
-              <div class="row-actions"><button class="btn">Save mapping</button></div>
+              <div class="save"><button class="btn">Save mapping</button></div>
             </form>
           </td>
-          <td>
-            <span class="badge b-{{ job.status }}">{{ job.status.replace('_', ' ') }}</span>
-            {% if job.notes %}<div class="sub trunc" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
+          <td data-l="Status">
+            <span class="badge st-{{ job.status }}"><span class="dot"></span>{{ job.status.replace('_', ' ') }}</span>
+            {% if job.notes %}<div class="note" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
           </td>
-          <td>{{ job.rows if job.rows else '&mdash;' | safe }}</td>
-          <td>
-            {% if job.status == 'dry_run' %}
-            <form class="inline" method="post" action="/push/{{ job.job_id }}">
+          <td data-l="Rows" class="rows">{{ job.rows if job.rows else '&mdash;' | safe }}</td>
+          <td data-l="Actions">
+            {% if job.status == 'mapped' %}
+            <form class="inline" method="post" action="/run/{{ job.job_id }}">
               <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="btn">Dry-run</button>
+              <button class="btn">Convert</button>
             </form>
-            <div class="row-actions">
+            {% elif job.status == 'dry_run' %}
+            <div class="actions">
+              <form class="inline" method="post" action="/push/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn">Dry-run</button>
+              </form>
               <form class="inline" method="post" action="/push/{{ job.job_id }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="commit" value="1">
-                <button class="btn primary">Push to switch</button>
+                <button class="btn primary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  Push
+                </button>
               </form>
             </div>
+            {% elif job.status == 'uploaded' %}
+            <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>done</span>
             {% else %}<span class="muted">&mdash;</span>{% endif %}
           </td>
         </tr>
@@ -170,18 +335,23 @@
     </table>
     {% else %}
     <div class="empty">
-      No deck files yet.<br><br>
-      Drop rate-deck files (csv / xlsx / zip) into the <code>inbox/</code> folder,
-      then click <strong>Scan inbox/</strong>.
+      <div class="eico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+      </div>
+      <h3>No deck files yet</h3>
+      <p>Drop rate decks (csv / xlsx / zip) into the <code>inbox/</code> folder, then click <strong>Scan inbox/</strong>.</p>
     </div>
     {% endif %}
-  </div>
-</div>
+  </section>
+</main>
 
 <script>
   function pick(jobId, trunkId) {
     var sel = document.getElementById('sel-' + jobId);
-    if (sel) { sel.value = String(trunkId); sel.scrollIntoView({ block: 'nearest' }); }
+    if (sel) {
+      sel.value = String(trunkId);
+      sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 </script>
 </body>

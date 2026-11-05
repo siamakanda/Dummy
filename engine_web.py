@@ -119,6 +119,21 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
 
         return back(await run_work(work))
 
+    @app.post("/run/{job_id}")
+    async def run_one(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = _open_store(db_path)
+            try:
+                return engine.run_mapped(store, job_id)
+            finally:
+                store.close()
+
+        return back(await run_work(work))
+
     @app.post("/scan")
     async def scan_inbox_route(request: Request):
         form = await request.form()
