@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dummy — Final Review</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#14181f; --muted:#5c6672; --line:#e3e7ec;
+    --ok:#137a4b; --okbg:#e6f4ec; --warn:#8a5300; --warnbg:#fdf1dd; --bad:#a01b2b; --badbg:#fbe9ec;
+    --accent:#2b5cff; --accentbg:#eaf0ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  a{color:var(--accent)}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px}
+  header.hero{background:linear-gradient(135deg,#13203d,#243d7a 55%,#2b5cff);color:#fff;border-radius:16px;
+    padding:26px 28px;box-shadow:0 10px 30px rgba(20,30,70,.18)}
+  header.hero h1{margin:0 0 6px;font-size:26px;letter-spacing:.2px}
+  header.hero p{margin:0;color:#cdd8ff;max-width:70ch}
+  .pill{display:inline-block;margin-top:14px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);
+    color:#fff;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:600}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:22px 0}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .kpi .n{font-size:26px;font-weight:750;line-height:1.1}
+  .kpi .l{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0}
+  section h2{margin:0 0 14px;font-size:16.5px;letter-spacing:.2px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em}
+  tr:last-child td{border-bottom:0}
+  code{background:#f0f2f6;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .step{background:var(--accentbg);border:1px solid #cdd9ff;color:#1b3aa8;border-radius:10px;padding:7px 11px;
+    font-size:13px;font-weight:600}
+  .arrow{color:#9aa6b6;font-weight:700}
+  .tag{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700}
+  .t-ok{background:var(--okbg);color:var(--ok)} .t-warn{background:var(--warnbg);color:var(--warn)}
+  .t-bad{background:var(--badbg);color:var(--bad)} .t-info{background:var(--accentbg);color:var(--accent)}
+  ul{margin:8px 0 0;padding-left:20px} li{margin:3px 0}
+  .muted{color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  .cmd{display:block;background:#0f1626;color:#d7e2ff;border-radius:10px;padding:9px 12px;margin:7px 0;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.8px;overflow-x:auto}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Dummy — carrier rate-deck automation</h1>
+    <p>Final consolidated review of the pipeline that reads carrier rate-deck emails, converts them to our fixed
+       template, and creates / uploads / assigns decks on the switch portal — dry-run by default, human in the loop.</p>
+    <span class="pill">M1–M18 complete · 141 tests green · 2026-11-04</span>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi"><div class="n">18<span class="muted">/18</span></div><div class="l">Milestones</div></div>
+    <div class="kpi"><div class="n">141</div><div class="l">Tests passing</div></div>
+    <div class="kpi"><div class="n">NANPA</div><div class="l">Destination (always)</div></div>
+    <div class="kpi"><div class="n">5</div><div class="l">Carrier layouts</div></div>
+    <div class="kpi"><div class="n">10</div><div class="l">Template columns</div></div>
+    <div class="kpi"><div class="n">dry-run</div><div class="l">Default write mode</div></div>
+  </div>
+
+  <section>
+    <h2>Pipeline</h2>
+    <div class="flow">
+      <span class="step">inbox / directory</span><span class="arrow">→</span>
+      <span class="step">unpack forwards</span><span class="arrow">→</span>
+      <span class="step">fetch deck</span><span class="arrow">→</span>
+      <span class="step">trunk matcher</span><span class="arrow">→</span>
+      <span class="step">human (if unsure)</span><span class="arrow">→</span>
+      <span class="step">cleaner</span><span class="arrow">→</span>
+      <span class="step">mapper</span><span class="arrow">→</span>
+      <span class="step">validator</span><span class="arrow">→</span>
+      <span class="step">dry-run report</span><span class="arrow">→</span>
+      <span class="step">human approval</span><span class="arrow">→</span>
+      <span class="step">portal upload + assign</span><span class="arrow">→</span>
+      <span class="step">audit + notify</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Milestones</h2>
+    <table>
+      <tr><th>#</th><th>Milestone</th><th>State</th></tr>
+      <tr><td>M1</td><td>Trunk scraper (<code>portal.py</code>/<code>parse.py</code>, <code>scrape_trunks.py</code>)</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M2</td><td>Cleaner + mapper + validator + <code>convert.py</code></td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M3</td><td>Trunk matcher + SQLite store + review CLI</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M4</td><td>Portal writer (create / upload), dry-run first</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M5</td><td>Mailbox (IMAP) + fetcher</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M6</td><td>Email understanding (LLM + rules)</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M7</td><td>Orchestrator + scheduler + audit + Docker</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M8</td><td>Input adapter: email <em>or</em> local directory</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M9</td><td>Assign deck via the Routing tab</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M10</td><td>Web admin: authenticated pending queue</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M11</td><td>Deploy: Docker / systemd / cron + TLS</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M12</td><td>Reliability: retries, structured logging, healthcheck</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M13</td><td>Multi-deck emails + carrier onboarding</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M14</td><td>Notifications (email only)</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M15</td><td>Cleanup (&gt;4 months) + <code>--reuse-deck</code></td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M16</td><td>Orchestrator <code>--reuse-deck</code></td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M17</td><td>Orphan-deck sweeper</td><td><span class="tag t-ok">done</span></td></tr>
+      <tr><td>M18</td><td>LLM column-mapping proposal</td><td><span class="tag t-ok">done</span></td></tr>
+    </table>
+  </section>
+
+  <div class="grid2">
+    <section>
+      <h2>Verified (offline)</h2>
+      <ul>
+        <li><code>pytest -q</code> → 141 passed</li>
+        <li><code>compileall</code> → clean</li>
+        <li>CONVO deck → 228,035 rows, exact-string rates</li>
+        <li>Directory source → 2 items dry-run, no portal write</li>
+        <li>All 5 carrier layouts convert; BLC matches the expected rows</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Not yet verified</h2>
+      <ul>
+        <li><span class="tag t-warn">live IMAP</span> only <code>.eml</code> fixtures so far</li>
+        <li><span class="tag t-warn">portal</span> writes proven only on BTCL TNT TRUNK</li>
+        <li><span class="tag t-warn">IP access</span> to the portal from a VPS unknown</li>
+      </ul>
+    </section>
+  </div>
+
+  <section>
+    <h2>Boundary audit (AGENTS §2)</h2>
+    <table>
+      <tr><th>Rule</th><th>Result</th></tr>
+      <tr><td>Portal URLs only in <code>portal.py</code></td><td><span class="tag t-ok">held</span> (base URL in <code>config.py</code>)</td></tr>
+      <tr><td>All HTML parsing only in <code>parse.py</code></td><td><span class="tag t-ok">held</span> (<code>BeautifulSoup</code> nowhere else)</td></tr>
+      <tr><td>Never print/log/commit secrets</td><td><span class="tag t-ok">held</span> (env only; <code>.env</code> ignored)</td></tr>
+      <tr><td>Writes dry-run by default</td><td><span class="tag t-ok">held</span> (<code>--commit</code> required)</td></tr>
+      <tr><td>Originals never overwritten</td><td><span class="tag t-ok">held</span> (archived by date/id)</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Risks &amp; open questions</h2>
+    <ul>
+      <li><strong>Live IMAP unverified</strong> — needs real <code>IMAP_*</code> creds.</li>
+      <li>Portal <strong>upload + assignment</strong> exercised only on the dev trunk.</li>
+      <li><code>SESSION_SECRET</code> has an insecure default — set it; enable <code>https_only</code> behind TLS.</li>
+      <li>Nuso unlisted NPANXX default rate is surfaced to a human, never invented.</li>
+      <li>AGENTS §10: <code>effective_date</code> format, <code>grace_time</code> blank vs <code>0</code>, source of the 12/6 default, portal confirm step.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Command cheatsheet</h2>
+    <span class="cmd">python convert.py &lt;file&gt; -o out.csv --trunk-config cfg.yml</span>
+    <span class="cmd">python upload.py converted.csv --trunk "BTCL TNT TRUNK" --reuse-deck --commit --headed</span>
+    <span class="cmd">python orchestrator.py --source directory --dir inbox --commit --reuse-deck</span>
+    <span class="cmd">python cleanup.py --older-than-months 4 [--commit]   ·   python cleanup.py --orphans --commit</span>
+    <span class="cmd">python review.py list   ·   python review.py apply-mapping &lt;id&gt;</span>
+    <span class="cmd">uvicorn web:app --host 127.0.0.1 --port 8000   # authenticated admin</span>
+  </section>
+
+  <footer>Generated from the repository state at M18 · rates kept as exact strings · destination is always NANPA</footer>
+</div>
+</body>
+</html>

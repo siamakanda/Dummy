@@ -1,0 +1,7 @@
+# Caddy reverse proxy in front of the Dummy web admin.
+# Set DUMMY_DOMAIN to your real hostname (e.g. admin.example.com) for automatic HTTPS.
+# With the default "localhost", Caddy uses an internal CA (fine for SSH-tunnel testing).
+{$DUMMY_DOMAIN:localhost} {
+	encode gzip
+	reverse_proxy web:8080
+}

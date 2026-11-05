@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dummy admin</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f6f7f9;color:#111}
+    header{background:#111827;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center}
+    header a{color:#fff;text-decoration:none;font-weight:600}
+    header form{margin:0}
+    header button{background:#374151;color:#fff;border:1px solid #4b5563}
+    main{max-width:1040px;margin:20px auto;padding:0 16px}
+    table{border-collapse:collapse;width:100%;background:#fff}
+    th,td{border:1px solid #e3e6ea;padding:6px 8px;text-align:left;font-size:14px}
+    th{background:#eef1f5}
+    button{padding:6px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-size:14px}
+    button.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+    .card{background:#fff;border:1px solid #e3e6ea;border-radius:8px;padding:16px;margin-bottom:16px}
+    pre{background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;overflow:auto;font-size:12px}
+    .error{color:#b91c1c}
+    .muted{color:#6b7280;font-size:13px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#e0e7ff;color:#3730a3;font-size:12px;font-weight:600}
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/">Dummy admin</a>
+    {% if user %}
+    <form method="post" action="/logout">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button type="submit">Logout ({{ user }})</button>
+    </form>
+    {% endif %}
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

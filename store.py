@@ -1,0 +1,369 @@
+"""SQLite persistence for Dummy (AGENTS.md section 5).
+
+Keeps the trunk inventory, per-trunk config, first-time approvals, and the audit trail
+(messages / runs / decisions). Only stdlib ``sqlite3``.
+"""
+from __future__ import annotations
+
+import csv
+import json
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+import config
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS carriers (
+    carrier_id   INTEGER PRIMARY KEY,
+    carrier_name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS trunks (
+    trunk_id     INTEGER PRIMARY KEY,
+    carrier_id   INTEGER NOT NULL,
+    carrier_name TEXT,
+    trunk_name   TEXT NOT NULL,
+    prefix       TEXT DEFAULT '',
+    status       TEXT DEFAULT '',
+    cost_deck    TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS carrier_senders (
+    domain     TEXT PRIMARY KEY,
+    carrier_id INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS trunk_config (
+    trunk_id              INTEGER PRIMARY KEY,
+    carrier_id            INTEGER,
+    tech_prefix           TEXT DEFAULT '',
+    default_init_duration INTEGER,
+    default_increment     INTEGER,
+    header_aliases        TEXT DEFAULT '{}',
+    name_aliases          TEXT DEFAULT '[]',
+    updated_at            TEXT
+);
+CREATE TABLE IF NOT EXISTS approved_trunks (
+    trunk_id    INTEGER PRIMARY KEY,
+    carrier_id  INTEGER,
+    approved_at TEXT,
+    approved_by TEXT
+);
+CREATE TABLE IF NOT EXISTS messages (
+    message_id   TEXT PRIMARY KEY,
+    received_at  TEXT,
+    sender       TEXT,
+    subject      TEXT,
+    processed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS runs (
+    run_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT,
+    started_at TEXT,
+    finished_at TEXT,
+    trunk_id   INTEGER,
+    status     TEXT,
+    notes      TEXT
+);
+CREATE TABLE IF NOT EXISTS decisions (
+    decision_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id      INTEGER,
+    created_at  TEXT,
+    kind        TEXT,
+    question    TEXT,
+    answer      TEXT,
+    actor       TEXT
+);
+CREATE TABLE IF NOT EXISTS deck_history (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    trunk_id       INTEGER,
+    deck_id        INTEGER,
+    effective_date TEXT,
+    rows           INTEGER,
+    changed        INTEGER,
+    converted_path TEXT,
+    recorded_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS pending (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id         TEXT,
+    run_id            INTEGER,
+    kind              TEXT,                 -- trunk | approval | warnings
+    status            TEXT DEFAULT 'open',  -- open | resolved | committed | failed | cancelled
+    trunk_id          INTEGER,
+    resolved_trunk_id INTEGER,
+    approved          INTEGER DEFAULT 0,
+    work_dir          TEXT,
+    converted_path    TEXT,
+    effective_date    TEXT,
+    rows              INTEGER,
+    changes           INTEGER,
+    reasons           TEXT DEFAULT '[]',
+    created_at        TEXT,
+    resolved_at       TEXT,
+    resolved_by       TEXT
+);
+"""
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+class Store:
+    """Thin SQLite wrapper. Creates its schema on open."""
+
+    def __init__(self, path: str | Path = config.DB_PATH):
+        self.path = str(path)
+        self.conn = sqlite3.connect(self.path)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(SCHEMA)
+        for statement in (                     # migrate older DBs
+            "ALTER TABLE deck_history ADD COLUMN deck_id INTEGER",
+            "ALTER TABLE trunk_config ADD COLUMN name_aliases TEXT DEFAULT '[]'",
+        ):
+            try:
+                self.conn.execute(statement)
+            except sqlite3.OperationalError:
+                pass
+        self.conn.commit()
+
+    def close(self) -> None:
+        self.conn.close()
+
+    def __enter__(self) -> "Store":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    # ---- trunks / carriers ----------------------------------------------
+    def load_trunks(self, csv_path: str | Path) -> int:
+        """Load data/trunks.csv (carrier + trunk list) into the DB. Returns rows read."""
+        with open(csv_path, newline="", encoding="utf-8-sig") as handle:
+            rows = list(csv.DictReader(handle))
+        loaded = 0
+        with self.conn:
+            for row in rows:
+                trunk_id, carrier_id = str(row.get("trunk_id", "")), str(row.get("carrier_id", ""))
+                if not trunk_id.isdigit() or not carrier_id.isdigit():
+                    continue
+                carrier_name = row.get("carrier_name", "")
+                self.conn.execute(
+                    "INSERT INTO carriers(carrier_id, carrier_name) VALUES(?, ?) "
+                    "ON CONFLICT(carrier_id) DO UPDATE SET carrier_name=excluded.carrier_name",
+                    (int(carrier_id), carrier_name))
+                self.conn.execute(
+                    "INSERT INTO trunks(trunk_id, carrier_id, carrier_name, trunk_name, prefix, status, cost_deck) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(trunk_id) DO UPDATE SET carrier_id=excluded.carrier_id, "
+                    "carrier_name=excluded.carrier_name, trunk_name=excluded.trunk_name, "
+                    "prefix=excluded.prefix, status=excluded.status, cost_deck=excluded.cost_deck",
+                    (int(trunk_id), int(carrier_id), carrier_name, row.get("trunk_name", ""),
+                     row.get("prefix", ""), row.get("status", ""), row.get("cost_deck", "")))
+                loaded += 1
+        return loaded
+
+    def all_trunks(self, carrier_id: int | None = None) -> list[dict]:
+        query = ("SELECT t.*, COALESCE(c.name_aliases, '[]') AS name_aliases "
+                 "FROM trunks t LEFT JOIN trunk_config c ON c.trunk_id = t.trunk_id")
+        args: tuple = ()
+        if carrier_id is not None:
+            query += " WHERE t.carrier_id = ?"
+            args = (carrier_id,)
+        query += " ORDER BY t.carrier_id, t.trunk_name"
+        rows = []
+        for row in self.conn.execute(query, args):
+            item = dict(row)
+            item["name_aliases"] = json.loads(item.get("name_aliases") or "[]")
+            rows.append(item)
+        return rows
+
+    def get_trunk(self, trunk_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM trunks WHERE trunk_id = ?", (trunk_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_carriers(self) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM carriers ORDER BY carrier_id")]
+
+    # ---- sender domain -> carrier ---------------------------------------
+    def set_sender_domain(self, domain: str, carrier_id: int) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO carrier_senders(domain, carrier_id) VALUES(?, ?) "
+                "ON CONFLICT(domain) DO UPDATE SET carrier_id=excluded.carrier_id",
+                (domain.strip().lower(), carrier_id))
+
+    def carrier_for_domain(self, domain: str) -> int | None:
+        row = self.conn.execute(
+            "SELECT carrier_id FROM carrier_senders WHERE domain = ?",
+            (domain.strip().lower(),)).fetchone()
+        return int(row["carrier_id"]) if row else None
+
+    def list_sender_domains(self) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM carrier_senders ORDER BY domain")]
+
+    # ---- per-trunk config ------------------------------------------------
+    def set_config(self, trunk_id: int, **fields) -> None:
+        current = self.get_config(trunk_id) or {}
+        merged = {**current, **{k: v for k, v in fields.items() if v is not None}}
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO trunk_config(trunk_id, carrier_id, tech_prefix, default_init_duration, "
+                "default_increment, header_aliases, name_aliases, updated_at) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(trunk_id) DO UPDATE SET carrier_id=excluded.carrier_id, "
+                "tech_prefix=excluded.tech_prefix, default_init_duration=excluded.default_init_duration, "
+                "default_increment=excluded.default_increment, header_aliases=excluded.header_aliases, "
+                "name_aliases=excluded.name_aliases, updated_at=excluded.updated_at",
+                (trunk_id, merged.get("carrier_id"), merged.get("tech_prefix", ""),
+                 merged.get("default_init_duration"), merged.get("default_increment"),
+                 json.dumps(merged.get("header_aliases", {})),
+                 json.dumps(merged.get("name_aliases", [])), _now()))
+
+    def get_config(self, trunk_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM trunk_config WHERE trunk_id = ?", (trunk_id,)).fetchone()
+        if not row:
+            return None
+        config_row = dict(row)
+        config_row["header_aliases"] = json.loads(config_row.get("header_aliases") or "{}")
+        config_row["name_aliases"] = json.loads(config_row.get("name_aliases") or "[]")
+        return config_row
+
+    # ---- approvals -------------------------------------------------------
+    def approve(self, trunk_id: int, by: str = "human", carrier_id: int | None = None) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO approved_trunks(trunk_id, carrier_id, approved_at, approved_by) "
+                "VALUES(?, ?, ?, ?) "
+                "ON CONFLICT(trunk_id) DO UPDATE SET approved_at=excluded.approved_at, "
+                "approved_by=excluded.approved_by",
+                (trunk_id, carrier_id, _now(), by))
+
+    def is_approved(self, trunk_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM approved_trunks WHERE trunk_id = ?", (trunk_id,)).fetchone()
+        return row is not None
+
+    # ---- messages / runs / decisions (audit trail) ----------------------
+    def add_message(self, message_id: str, received_at: str | None = None,
+                    sender: str = "", subject: str = "") -> bool:
+        """Insert a message; returns True if it was new (idempotency by Message-ID)."""
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT OR IGNORE INTO messages(message_id, received_at, sender, subject, processed_at) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (message_id, received_at, sender, subject, _now()))
+        return cursor.rowcount > 0
+
+    def has_message(self, message_id: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM messages WHERE message_id = ?", (message_id,)).fetchone() is not None
+
+    def start_run(self, message_id: str) -> int:
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO runs(message_id, started_at, status) VALUES(?, ?, ?)",
+                (message_id, _now(), "started"))
+        return int(cursor.lastrowid)
+
+    def finish_run(self, run_id: int, trunk_id: int | None = None,
+                   status: str = "done", notes: str = "") -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE runs SET finished_at = ?, trunk_id = ?, status = ?, notes = ? WHERE run_id = ?",
+                (_now(), trunk_id, status, notes, run_id))
+
+    def add_decision(self, run_id: int, kind: str, question: str,
+                     answer: str, actor: str = "human") -> int:
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO decisions(run_id, created_at, kind, question, answer, actor) "
+                "VALUES(?, ?, ?, ?, ?, ?)",
+                (run_id, _now(), kind, question, answer, actor))
+        return int(cursor.lastrowid)
+
+    # ---- deck history ----------------------------------------------------
+    def record_deck(self, trunk_id: int, effective_date: str | None, rows: int,
+                    changed: int, converted_path, deck_id: int | None = None) -> int:
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO deck_history(trunk_id, deck_id, effective_date, rows, changed, "
+                "converted_path, recorded_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                (trunk_id, deck_id, effective_date, rows, changed, str(converted_path), _now()))
+        return int(cursor.lastrowid)
+
+    def last_deck(self, trunk_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM deck_history WHERE trunk_id = ? ORDER BY id DESC LIMIT 1",
+            (trunk_id,)).fetchone()
+        return dict(row) if row else None
+
+    def source_uploaded(self, source_id: str) -> bool:
+        """True if this source (Message-ID / file hash) was already successfully uploaded."""
+        row = self.conn.execute(
+            "SELECT 1 FROM runs WHERE message_id = ? AND status = 'uploaded' LIMIT 1",
+            (source_id,)).fetchone()
+        return row is not None
+
+    # ---- pending queue (human-in-the-loop) -------------------------------
+    def add_pending(self, source_id: str, *, kind: str, run_id: int | None = None,
+                    trunk_id: int | None = None, work_dir=None, converted_path=None,
+                    effective_date: str = "", rows: int = 0, changes: int = 0,
+                    reasons=None) -> int:
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO pending(source_id, run_id, kind, status, trunk_id, work_dir, "
+                "converted_path, effective_date, rows, changes, reasons, created_at) "
+                "VALUES(?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)",
+                (source_id, run_id, kind, trunk_id, str(work_dir), str(converted_path),
+                 effective_date, rows, changes, json.dumps(reasons or []), _now()))
+        return int(cursor.lastrowid)
+
+    def list_pending(self, status: str | None = "open") -> list[dict]:
+        query = "SELECT * FROM pending"
+        args: tuple = ()
+        if status:
+            query += " WHERE status = ?"
+            args = (status,)
+        query += " ORDER BY id DESC"
+        return [dict(row) for row in self.conn.execute(query, args)]
+
+    def get_pending(self, pending_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM pending WHERE id = ?", (pending_id,)).fetchone()
+        return dict(row) if row else None
+
+    def open_pending_for(self, source_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM pending WHERE source_id = ? AND status IN ('open', 'resolved') "
+            "ORDER BY id DESC LIMIT 1", (source_id,)).fetchone()
+        return dict(row) if row else None
+
+    def resolve_pending(self, pending_id: int, *, trunk_id: int | None = None,
+                        approve: bool = False, by: str = "human") -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE pending SET status = 'resolved', "
+                "resolved_trunk_id = COALESCE(?, resolved_trunk_id), "
+                "approved = CASE WHEN ? THEN 1 ELSE approved END, resolved_at = ?, resolved_by = ? "
+                "WHERE id = ?",
+                (trunk_id, 1 if approve else 0, _now(), by, pending_id))
+
+    def set_pending_status(self, pending_id: int, status: str) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE pending SET status = ? WHERE id = ?", (status, pending_id))
+
+    def reopen_pending(self, pending_id: int, *, kind: str = "approval",
+                       trunk_id: int | None = None, reasons=None) -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE pending SET status = 'open', kind = ?, trunk_id = COALESCE(?, trunk_id), "
+                "reasons = ?, resolved_at = NULL, resolved_by = NULL WHERE id = ?",
+                (kind, trunk_id, json.dumps(reasons or []), pending_id))
+
+    # ---- read helpers for the web admin ---------------------------------
+    def list_runs(self, limit: int = 30) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM runs ORDER BY run_id DESC LIMIT ?", (limit,))]
+
+    def list_decks(self, limit: int = 30) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM deck_history ORDER BY id DESC LIMIT ?", (limit,))]

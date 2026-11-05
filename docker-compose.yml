@@ -1,0 +1,40 @@
+# Dummy: orchestrator daemon + web admin + TLS reverse proxy.
+# Start: docker compose up -d --build
+# Note: the orchestrator runs DRY-RUN by default. Add "--commit" to its command to let the
+# daemon apply resolved queue items to the portal.
+services:
+  orchestrator:
+    build: .
+    env_file: .env
+    command: ["python", "orchestrator.py", "--loop", "--interval", "300"]
+    volumes:
+      - ./data:/app/data
+      - ./.state:/app/.state
+    restart: unless-stopped
+
+  web:
+    build: .
+    env_file: .env
+    command: ["uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8080"]
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      DUMMY_DOMAIN: ${DUMMY_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Redacted excerpt of the real /rate_decks page: the Add-Deck form + two deck cards. -->
+<html>
+<body>
+<main>
+  <div class="collapse" id="addForm"><div class="form-section">
+    <form action="/actions/rate_deck_save" method="POST">
+      <input type="hidden" name="_csrf" value="redacted">
+      <div class="row g-3 rd-deck-fields">
+        <div class="col-md-3"><label class="form-label">Name</label><input type="text" name="name" class="form-control" required="" value=""></div>
+        <div class="col-md-2"><label class="form-label">Type</label><select name="type" class="form-select"><option value="customer">Customer</option><option value="carrier">Carrier</option></select></div>
+        <div class="col-md-1"><label class="form-label">Currency</label><select name="currency" class="form-select"><option value="USD">USD</option><option value="EUR">EUR</option></select></div>
+        <div class="col-md-2"><label class="form-label">Mode</label><select name="mode" class="form-select"><option value="npanxx" selected="">NPANXX (Inter/Intra)</option><option value="flat">Flat Rate</option></select></div>
+        <div class="col-md-2"><label class="form-label">Description</label><input type="text" name="description" class="form-control" value=""></div>
+        <div class="col-md-1"><div class="form-check form-switch mt-4"><input type="checkbox" name="enabled" value="1" class="form-check-input" checked=""><label class="form-check-label">Enabled</label></div></div>
+        <div class="col-md-2"><button type="submit" class="btn btn-primary mt-3">Save</button></div>
+      </div>
+      <div class="row g-3 mt-2"><div class="col-md-12">
+        <input type="checkbox" class="form-check-input" id="lrn_billing" name="lrn_billing" value="1">
+        <label class="form-check-label" for="lrn_billing"><strong>Use LRN for billing</strong></label>
+      </div></div>
+    </form>
+  </div></div>
+
+  <div class="rd-card" id="rd-card-175" data-type="customer">
+    <div class="rd-card-header">
+      <div><div class="rd-name"><span class="rd-icon customer"><i class="bi bi-people-fill"></i></span> ALASKA RATE                </div></div>
+      <div class="rd-badges">
+        <span class="rd-type-badge customer"><i class="bi bi-person"></i> Customer</span>
+        <span class="rd-mode-badge npanxx">NPANXX</span>
+        <button class="rd-status active" type="button">Active</button>
+      </div>
+    </div>
+    <div class="rd-card-footer"><a href="/rate_deck_upload.php?id=175" class="rd-action upload">Upload</a></div>
+  </div>
+
+  <div class="rd-card" id="rd-card-72" data-type="carrier">
+    <div class="rd-card-header">
+      <div><div class="rd-name"><span class="rd-icon carrier"><i class="bi bi-building"></i></span> BTCL TNT TRUNK 11_03_2026                </div></div>
+      <div class="rd-badges">
+        <span class="rd-type-badge carrier"><i class="bi bi-building"></i> Carrier</span>
+        <span class="rd-mode-badge npanxx">NPANXX</span>
+        <button class="rd-status active" type="button">Active</button>
+      </div>
+    </div>
+    <div class="rd-card-footer"><a href="/rate_deck_upload.php?id=72" class="rd-action upload">Upload</a></div>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/">← back</a></p>
+<h2>Pending #{{ item.id }} — <span class="badge">{{ item.kind }}</span></h2>
+
+<div class="card">
+  <p><strong>Source:</strong> {{ item.source_id }}</p>
+  <p><strong>Trunk:</strong> {{ trunk.trunk_name if trunk else "—" }}</p>
+  <p><strong>Deck:</strong> {{ item.effective_date or "—" }} · {{ item.rows }} rows · {{ item.changes }} changes</p>
+  {% if reasons %}<p><strong>Reasons:</strong> {{ reasons|join(", ") }}</p>{% endif %}
+  <p><a href="/pending/{{ item.id }}/download">download converted CSV</a></p>
+</div>
+
+<form method="post" action="/pending/{{ item.id }}/resolve" class="card">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+  {% if item.kind == "trunk" or not trunk %}
+  <p><label>Choose trunk<br>
+    <select name="trunk_id">
+      <option value="">— select —</option>
+      {% for t in trunks %}
+        <option value="{{ t.trunk_id }}" {% if trunk and trunk.trunk_id == t.trunk_id %}selected{% endif %}>
+          {{ t.carrier_name }} · {{ t.trunk_name }}
+        </option>
+      {% endfor %}
+    </select>
+  </label></p>
+  {% endif %}
+
+  {% if item.kind in ("approval", "warnings") %}
+  <p><label><input type="checkbox" name="approve" value="1" checked> Approve</label></p>
+  {% endif %}
+
+  <button class="primary" type="submit" name="action" value="resolve">Resolve</button>
+  <button type="submit" name="action" value="cancel">Cancel item</button>
+</form>
+
+{% if head %}
+<div class="card">
+  <h3>Converted CSV (head)</h3>
+  <pre>{{ head|join("\n") }}</pre>
+</div>
+{% endif %}
+{% endblock %}
