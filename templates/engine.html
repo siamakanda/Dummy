@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dummy - deck inbox</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     :root{
       --bg:#f5f6fb; --surface:#ffffff; --surface-2:#f9fafd; --ink:#0f172a; --ink-2:#475569;
@@ -88,6 +89,17 @@
       padding:15px 20px;border-bottom:1px solid var(--line-2)}
     .panel-head h2{margin:0;font-size:14.5px;font-weight:750;letter-spacing:.1px}
     .panel-head .muted{color:var(--muted);font-size:12.5px}
+    .filterbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 20px;
+      border-bottom:1px solid var(--line-2);background:var(--surface)}
+    .search{position:relative;flex:1;min-width:220px;max-width:420px}
+    .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;
+      color:var(--faint);pointer-events:none}
+    .search input{width:100%;padding:9px 12px 9px 36px;border:1px solid var(--line);border-radius:10px;
+      background:var(--surface);font-size:13.5px;color:var(--ink);box-shadow:var(--shadow-sm)}
+    .search input:focus{outline:none;border-color:#c7d2fe;box-shadow:0 0 0 4px rgba(99,102,241,.14)}
+    .filterbar select{width:auto;max-width:none;min-width:160px;padding:9px 34px 9px 12px}
+    .filterbar .count{margin-left:auto;color:var(--ink-2);font-weight:600;font-size:12.5px;
+      font-variant-numeric:tabular-nums}
     table{width:100%;border-collapse:separate;border-spacing:0}
     thead th{position:sticky;top:63px;background:var(--surface-2);z-index:1;color:var(--muted);
       font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:left;
@@ -97,6 +109,7 @@
     tbody tr:nth-child(even){background:#fcfdff}
     tbody tr{transition:background .12s ease}
     tbody tr:hover{background:#f8faff}
+    tbody td:nth-child(n+4){vertical-align:middle}
 
     .num{color:var(--faint);font-variant-numeric:tabular-nums;font-weight:600}
     .file{font-weight:750;font-size:14.5px;letter-spacing:-.1px;word-break:break-word}
@@ -243,6 +256,21 @@
       <h2>Files</h2>
       <span class="muted">{{ trunks | length }} trunks on the switch</span>
     </div>
+    <div class="filterbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="q" type="search" placeholder="Filter by file, trunk or status..." autocomplete="off">
+      </div>
+      <select id="st" aria-label="Status filter">
+        <option value="">All statuses</option>
+        <option value="unmapped">Unmapped</option>
+        <option value="mapped">Mapped</option>
+        <option value="dry_run">Ready to push</option>
+        <option value="uploaded">Uploaded</option>
+        <option value="failed">Failed</option>
+      </select>
+      <span class="count" id="count"></span>
+    </div>
 
     {% if jobs %}
     <table>
@@ -258,7 +286,7 @@
       </thead>
       <tbody>
       {% for job in jobs %}
-        <tr>
+        <tr data-status="{{ job.status }}" data-search="{{ (job.file_name ~ ' ' ~ job.status ~ ' ' ~ job.trunk_label) | lower }}">
           <td data-l="#" class="num">{{ job.job_id }}</td>
           <td data-l="Deck file">
             <div class="file">{{ job.file_name }}</div>
@@ -296,7 +324,7 @@
                 </optgroup>
                 {% endfor %}
               </select>
-              <div class="save"><button class="btn">Save mapping</button></div>
+              <div class="save">{% if job.status == 'uploaded' %}<span class="muted">assigned</span>{% else %}<button class="btn">Save mapping</button>{% endif %}</div>
             </form>
           </td>
           <td data-l="Status">
@@ -353,6 +381,31 @@
       sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }
+
+  (function () {
+    var q = document.getElementById('q');
+    var st = document.getElementById('st');
+    var count = document.getElementById('count');
+    var rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr'));
+
+    function apply() {
+      var text = (q && q.value || '').trim().toLowerCase();
+      var status = st ? st.value : '';
+      var shown = 0;
+      rows.forEach(function (row) {
+        var okText = !text || (row.dataset.search || '').indexOf(text) !== -1;
+        var okStatus = !status || row.dataset.status === status;
+        var show = okText && okStatus;
+        row.style.display = show ? '' : 'none';
+        if (show) shown++;
+      });
+      if (count) count.textContent = shown + ' of ' + rows.length;
+    }
+
+    if (q) q.addEventListener('input', apply);
+    if (st) st.addEventListener('change', apply);
+    apply();
+  })();
 </script>
 </body>
 </html>

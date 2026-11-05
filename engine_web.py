@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -27,6 +27,16 @@ from upload import commit_allowed
 
 log = logging.getLogger("dummy.engine_web")
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+FAVICON = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0" stop-color="#6366f1"/><stop offset="0.55" stop-color="#4f46e5"/>'
+    '<stop offset="1" stop-color="#4338ca"/></linearGradient></defs>'
+    '<rect width="64" height="64" rx="16" fill="url(#g)"/>'
+    '<g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">'
+    '<path d="M18 23h28"/><path d="M18 32h18"/><path d="M18 41h12"/></g></svg>'
+)
 
 
 def _open_store(db_path: str) -> Store:
@@ -73,6 +83,11 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
     def back(error: str = "") -> RedirectResponse:
         return RedirectResponse("/" if not error else f"/?error={quote(error)}", status_code=303)
 
+    @app.get("/favicon.svg", include_in_schema=False)
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return Response(content=FAVICON, media_type="image/svg+xml")
+
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
         error = request.query_params.get("error", "")
@@ -82,6 +97,8 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             stats = {"total": len(jobs)}
             for job in jobs:
                 stats[job["status"]] = stats.get(job["status"], 0) + 1
+                trunk = store.get_trunk(job["trunk_id"]) if job["trunk_id"] else None
+                job["trunk_label"] = trunk["trunk_name"] if trunk else ""
             trunks = store.all_trunks()
         finally:
             store.close()

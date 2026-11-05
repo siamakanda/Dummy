@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M26 done · `pytest` → **170 passed** (offline)_
+_2026-11-04 · M1–M26 done · `pytest` → **171 passed** (offline)_
 
 ## TL;DR
 
@@ -367,4 +367,6 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   icon stat cards, a card-wrapped table with status chips, effective-date tags, clickable suggestion chips
   (2 + "+N more"), a full-width trunk select, and **per-row actions** (Convert for mapped, Dry-run / Push
   for ready, "done" for uploaded). Added `POST /run/{job_id}` for the per-row Convert button.
-- Verified: **170 tests**.
+- Added a **favicon** (`/favicon.svg` + `/favicon.ico`) and a **live filter bar** (search + status dropdown
+  with an "N of M" count).
+- Verified: **171 tests**.

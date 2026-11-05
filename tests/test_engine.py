@@ -208,3 +208,14 @@ def test_engine_web_run_one_converts_a_mapped_job(tmp_path, monkeypatch):
     check = Store(db)
     assert check.get_job(job_id)["status"] == "dry_run"
     check.close()
+
+
+def test_engine_web_favicon(tmp_path):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    client = TestClient(engine_web.create_app(db_path=tmp_path / "dummy.db", secret="test-secret"))
+
+    svg = client.get("/favicon.svg")
+    assert svg.status_code == 200 and "svg" in svg.headers["content-type"]
+    assert client.get("/favicon.ico").status_code == 200
