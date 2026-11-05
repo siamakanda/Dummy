@@ -28,6 +28,18 @@ left), and `DEPLOY.md` (VPS) for the full picture.
     playwright install chromium
     copy .env.example .env            # fill in PORTAL_USERNAME / PORTAL_PASSWORD
 
+## Start (Windows - double-click)
+
+Day-to-day, non-technical users just **double-click `start.bat`** in the project folder. A small terminal
+menu appears; choose **1) Start dashboard** (or press Enter) and the dashboard opens in your browser at
+http://127.0.0.1:8090. Keep the window open; Ctrl+C stops it.
+
+The menu also offers refresh-trunks / scan-inbox / convert / status. Power users can run one directly:
+`python launcher.py status|sync|scan|convert`.
+
+First run only: install Python 3.11+, then `pip install -r requirements.txt` and
+`playwright install chromium`.
+
 ## M1 — trunk scraper (reads the switch portal)
 
     python scrape_trunks.py --discover       # save HTML + screenshots of key pages to data/snapshots/

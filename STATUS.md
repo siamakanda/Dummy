@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M24 done · `pytest` → **162 passed** (offline)_
+_2026-11-04 · M1–M25 done · `pytest` → **169 passed** (offline)_
 
 ## TL;DR
 
@@ -347,3 +347,14 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   uploaded, so the trunk was never actually updated — and it deletes the orphan deck on any failure.
 - Verified: **165 tests**. First real write on BTCL TNT TRUNK made **deck 187** (uploaded but *not*
   assigned, due to the old code) — clear it with `python cleanup.py --orphans --min-age-days 0`.
+
+---
+
+## 25. Launcher (done)
+
+- **`start.bat`** (double-click) runs `launcher.py`: a terminal menu whose option 1 starts the dashboard on
+  **127.0.0.1:8090** and opens the browser; everything else happens in the dashboard (no arguments needed).
+- Menu also: refresh trunks / scan inbox / convert mapped / status. Direct form for pros:
+  `python launcher.py <action>`.
+- Default port 8090 (`set DUMMY_PORT=...` to change); handles missing deps and stdin EOF gracefully.
+- Verified: **169 tests**.

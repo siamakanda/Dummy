@@ -574,6 +574,8 @@ sync -> scan -> map (local web dashboard) -> convert -> dry-run -> approve -> pu
 - `engine_web.py` — local dashboard on `127.0.0.1` (**no login**; CSRF kept) for the human file→trunk
   mapping and approval; action failures show as an on-page banner.
 - `inbox/` — the drop folder; jobs live in the `deck_jobs` table.
+- `launcher.py` + `start.bat` — double-click launcher: a small terminal menu, then starts the dashboard and
+  opens the browser; day-to-day work stays in the browser.
 - Reuses `scrape_trunks`, `input_sources.DirectorySource`, `trunk_matcher`, `cleaner` / `mapper` /
   `validator`, `upload.execute`, `store`, `notify`.
 
