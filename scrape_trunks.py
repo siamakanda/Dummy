@@ -7,7 +7,7 @@ Examples
   python scrape_trunks.py --ids 1-120             # a range (carriers with no trunk cards are skipped)
   python scrape_trunks.py --all --headed          # watch the browser
 """
-import argparse, csv, json, time
+import argparse, csv, time
 import config
 from parse import extract_trunks, extract_carriers, carrier_name
 from portal import Portal

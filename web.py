@@ -21,13 +21,6 @@ from store import Store
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
-def _open_store(db_path: str) -> Store:
-    store = Store(db_path)
-    if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-        store.load_trunks(config.DATA_DIR / "trunks.csv")
-    return store
-
-
 def create_app(*, db_path=None, admin_user=None, admin_password=None, secret=None) -> FastAPI:
     db_path = str(db_path or config.DB_PATH)
     admin_user = config.ADMIN_USER if admin_user is None else admin_user
@@ -88,7 +81,7 @@ def create_app(*, db_path=None, admin_user=None, admin_password=None, secret=Non
     async def dashboard(request: Request):
         if not logged_in(request):
             return RedirectResponse("/login", status_code=303)
-        store = _open_store(db_path)
+        store = Store.open(db_path)
         try:
             pending = store.list_pending("open")
             for item in pending:
@@ -104,7 +97,7 @@ def create_app(*, db_path=None, admin_user=None, admin_password=None, secret=Non
     async def pending_detail(request: Request, pid: int):
         if not logged_in(request):
             return RedirectResponse("/login", status_code=303)
-        store = _open_store(db_path)
+        store = Store.open(db_path)
         try:
             item = store.get_pending(pid)
             if item is None:
@@ -128,7 +121,7 @@ def create_app(*, db_path=None, admin_user=None, admin_password=None, secret=Non
         form = await request.form()
         if not csrf_ok(request, form):
             return PlainTextResponse("bad csrf", status_code=403)
-        store = _open_store(db_path)
+        store = Store.open(db_path)
         try:
             if store.get_pending(pid) is None:
                 return PlainTextResponse("Not found", status_code=404)
@@ -148,7 +141,7 @@ def create_app(*, db_path=None, admin_user=None, admin_password=None, secret=Non
     async def pending_download(request: Request, pid: int):
         if not logged_in(request):
             return RedirectResponse("/login", status_code=303)
-        store = _open_store(db_path)
+        store = Store.open(db_path)
         try:
             item = store.get_pending(pid)
             converted = item.get("converted_path") if item else None

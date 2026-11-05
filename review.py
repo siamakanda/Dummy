@@ -95,12 +95,6 @@ def resolve_and_record(
 
 # ---- CLI ------------------------------------------------------------------
 
-def _open_store(path: str) -> Store:
-    store = Store(path)
-    if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-        store.load_trunks(config.DATA_DIR / "trunks.csv")
-    return store
-
 def _cmd_list(store: Store, args) -> int:
     items = store.list_pending(args.status or None)
     if not items:
@@ -295,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     p_config.add_argument("--trunk")
 
     args = parser.parse_args(argv)
-    with _open_store(args.db) as store:
+    with Store.open(args.db) as store:
         handler = {"list": _cmd_list, "resolve": _cmd_resolve,
                    "approve-trunk": _cmd_approve_trunk, "match": _cmd_match,
                    "set-domain": _cmd_set_domain, "set-aliases": _cmd_set_aliases,

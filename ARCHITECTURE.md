@@ -548,7 +548,7 @@ Previous-deck thresholds are best-effort defaults, tunable via `--rate-change-pc
 ```
 *.py                  flat modules (kept at the repo root)
 tests/                pytest suite + small offline fixtures
-docs/                 PROMPTS.md, final_review.html
+docs/                 PROMPTS.md
 templates/            Jinja templates (web.py admin)
 tools/                read-only helpers (network capture)
 samples/              large real decks (git-ignored)

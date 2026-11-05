@@ -445,10 +445,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging_setup.configure()
 
-    with Store(args.db) as store:
-        if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-            store.load_trunks(config.DATA_DIR / "trunks.csv")
-
+    with Store.open(args.db) as store:
         if args.commit:
             from portal import Portal
             portal_ctx = Portal(headless=not args.headed)

@@ -11,7 +11,7 @@ left), and `DEPLOY.md` (VPS) for the full picture.
 
     *.py                  flat modules (see ARCHITECTURE.md for the map) - kept at the repo root
     tests/                pytest suite + small fixtures (offline; no portal/email hit)
-    docs/                 PROMPTS.md, final_review.html
+    docs/                 PROMPTS.md
     templates/            Jinja templates for the web admin (web.py)
     tools/                read-only helper scripts (network capture)
     samples/              large real sample decks (git-ignored; scale checks)

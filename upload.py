@@ -129,10 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default=str(config.DB_PATH))
     args = parser.parse_args(argv)
 
-    with Store(args.db) as store:
-        if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-            store.load_trunks(config.DATA_DIR / "trunks.csv")
-
+    with Store.open(args.db) as store:
         plan = build_plan(store, args.trunk, args.csv_path)
         if args.effective_date:
             plan.effective_date = args.effective_date

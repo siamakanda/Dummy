@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
+from store import Store  # noqa: E402  (import after sys.path bootstrap)
+
 
 def clear() -> None:
     os.system("cls" if os.name == "nt" else "clear")
@@ -25,15 +27,6 @@ def banner() -> None:
     print("  Dummy  -  carrier rate-deck engine")
     print("  (work, unassigned decks, and pushes all happen in the dashboard)")
     print("=" * 58)
-
-
-def _store():
-    import config
-    from store import Store
-    store = Store(config.DB_PATH)
-    if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-        store.load_trunks(config.DATA_DIR / "trunks.csv")
-    return store
 
 
 def _web_port() -> int:
@@ -60,7 +53,7 @@ def start_dashboard() -> None:
 def refresh_trunks() -> None:
     import engine
     from types import SimpleNamespace
-    store = _store()
+    store = Store.open()
     try:
         engine.cmd_sync(store, SimpleNamespace(headed=False))
     finally:
@@ -69,7 +62,7 @@ def refresh_trunks() -> None:
 
 def scan_inbox() -> None:
     import engine
-    store = _store()
+    store = Store.open()
     try:
         scanned, created = engine.scan_inbox(store)
         print(f"\n  Scanned {scanned} file(s); {created} new deck(s).")
@@ -79,7 +72,7 @@ def scan_inbox() -> None:
 
 def convert_mapped() -> None:
     import engine
-    store = _store()
+    store = Store.open()
     try:
         results = engine.run_mapped(store)
         print(f"\n  Converted {len(results)} deck(s)." if results else "\n  No mapped decks to convert.")
@@ -88,7 +81,7 @@ def convert_mapped() -> None:
 
 
 def show_status() -> None:
-    store = _store()
+    store = Store.open()
     try:
         jobs = store.list_jobs()
         counts: dict[str, int] = {}

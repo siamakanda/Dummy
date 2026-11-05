@@ -102,9 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--headed", action="store_true", help="show the browser")
     args = parser.parse_args(argv)
 
-    with Store(config.DB_PATH) as store:
-        if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-            store.load_trunks(config.DATA_DIR / "trunks.csv")
+    with Store.open(config.DB_PATH) as store:
         trunk_names = [t["trunk_name"] for t in store.all_trunks()]
 
         with Portal(headless=not args.headed) as portal:

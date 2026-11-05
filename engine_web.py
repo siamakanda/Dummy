@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -39,13 +39,6 @@ FAVICON = (
     '<g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">'
     '<path d="M18 23h28"/><path d="M18 32h18"/><path d="M18 41h12"/></g></svg>'
 )
-
-
-def _open_store(db_path: str) -> Store:
-    store = Store(db_path)
-    if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-        store.load_trunks(config.DATA_DIR / "trunks.csv")
-    return store
 
 
 class _BufferHandler(logging.Handler):
@@ -165,7 +158,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
         flashes = jobs.pop_flashes()
-        store = _open_store(db_path)
+        store = Store.open(db_path)
         try:
             all_jobs = store.list_jobs()
             stats = {"total": len(all_jobs)}
@@ -193,7 +186,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             return PlainTextResponse("bad csrf", status_code=403)
 
         def work():
-            store = _open_store(db_path)
+            store = Store.open(db_path)
             try:
                 trunk_id = form.get("trunk_id")
                 job = store.get_job(job_id)
@@ -217,7 +210,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             return PlainTextResponse("bad csrf", status_code=403)
 
         def work():
-            store = _open_store(db_path)
+            store = Store.open(db_path)
             try:
                 results = engine.run_mapped(store)
             finally:
@@ -245,7 +238,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             return PlainTextResponse("bad csrf", status_code=403)
 
         def work():
-            store = _open_store(db_path)
+            store = Store.open(db_path)
             try:
                 results = engine.run_mapped(store, job_id)
             finally:
@@ -270,7 +263,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             return PlainTextResponse("bad csrf", status_code=403)
 
         def work():
-            store = _open_store(db_path)
+            store = Store.open(db_path)
             try:
                 scanned, created = engine.scan_inbox(store)
             finally:
@@ -294,7 +287,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
         def work():
             # Own the SQLite connection inside this worker thread: Playwright's sync API needs a
             # thread with no running event loop, and sqlite3 connections are thread-affine.
-            store = _open_store(db_path)
+            store = Store.open(db_path)
             try:
                 job = store.get_job(job_id)
                 if not job or not job["trunk_id"]:

@@ -36,13 +36,6 @@ from validator import validate
 log = logging.getLogger("dummy.engine")
 
 
-def _open_store(db_path: str) -> Store:
-    store = Store(db_path)
-    if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
-        store.load_trunks(config.DATA_DIR / "trunks.csv")
-    return store
-
-
 def cmd_sync(store: Store, args) -> int:
     """Read carriers/trunks from the switch into the store (+ data/trunks.csv)."""
     from parse import carrier_name, extract_carriers, extract_trunks
@@ -284,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     Path(config.INBOX_DIR).mkdir(parents=True, exist_ok=True)
-    with _open_store(args.db) as store:
+    with Store.open(args.db) as store:
         return {"sync": cmd_sync, "scan": cmd_scan, "list": cmd_list,
                 "map": cmd_map, "run": cmd_run, "push": cmd_push}[args.command](store, args)
 

@@ -149,6 +149,14 @@ class Store:
     def __exit__(self, *exc) -> None:
         self.close()
 
+    @classmethod
+    def open(cls, path: str | Path | None = None) -> "Store":
+        """Open a store and, if it has no trunks yet, bootstrap from data/trunks.csv."""
+        store = cls(path or config.DB_PATH)
+        if not store.all_trunks() and (config.DATA_DIR / "trunks.csv").exists():
+            store.load_trunks(config.DATA_DIR / "trunks.csv")
+        return store
+
     # ---- trunks / carriers ----------------------------------------------
     def load_trunks(self, csv_path: str | Path) -> int:
         """Load data/trunks.csv (carrier + trunk list) into the DB. Returns rows read."""

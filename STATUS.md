@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M27 done · `pytest` → **172 passed** (offline)_
+_2026-11-04 · M1–M28 done · `pytest` → **172 passed** (offline)_
 
 ## TL;DR
 
@@ -383,4 +383,14 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   elapsed time, and a Finished/Failed footer; it reloads with the flash message when the job ends.
 - `GET /jobs/{id}` returns `{status, lines, elapsed}`; `engine.py` now logs key steps (scan, convert,
   create → upload → assign → verify).
+- Verified: **172 tests**.
+
+---
+
+## 28. Cleanup & refactor (done)
+
+- Centralised "open the store + bootstrap trunks.csv" into **`Store.open()`** — the logic was duplicated
+  in 8 modules (`engine`, `engine_web`, `launcher`, `web`, `review`, `upload`, `orchestrator`, `cleanup`).
+- Removed an unused import (`scrape_trunks.py: json`); archived the stale `final_review.html` into
+  `archive/`; cleared `__pycache__` / `.pytest_cache`. `python -m compileall` is clean.
 - Verified: **172 tests**.
