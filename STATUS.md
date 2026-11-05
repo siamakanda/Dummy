@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M26 done · `pytest` → **171 passed** (offline)_
+_2026-11-04 · M1–M26 done · `pytest` → **172 passed** (offline)_
 
 ## TL;DR
 
@@ -369,4 +369,6 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   for ready, "done" for uploaded). Added `POST /run/{job_id}` for the per-row Convert button.
 - Added a **favicon** (`/favicon.svg` + `/favicon.ico`) and a **live filter bar** (search + status dropdown
   with an "N of M" count).
-- Verified: **171 tests**.
+- Added **flash messages** (success / info / warning / error): friendly, specific copy for every action,
+  colour-coded icons, dismiss button, and auto-dismiss for success/info.
+- Verified: **172 tests**.

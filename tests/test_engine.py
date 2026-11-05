@@ -219,3 +219,21 @@ def test_engine_web_favicon(tmp_path):
     svg = client.get("/favicon.svg")
     assert svg.status_code == 200 and "svg" in svg.headers["content-type"]
     assert client.get("/favicon.ico").status_code == 200
+
+
+def test_engine_web_flash_after_scan(tmp_path, monkeypatch):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    db = tmp_path / "dummy.db"
+    store = make_store(tmp_path)
+    store.close()
+
+    client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
+    dash = client.get("/")
+
+    page = client.post("/scan", data={"_csrf": _csrf(dash.text)})   # follows the 303 to the dashboard
+    assert "No new decks" in page.text
