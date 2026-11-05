@@ -2,6 +2,7 @@
 import pathlib
 import re
 import sys
+import time
 from types import SimpleNamespace as NS
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
@@ -79,6 +80,18 @@ def _csrf(html: str) -> str:
     return re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
 
 
+def _wait_job(client, response, timeout: float = 10.0) -> dict:
+    """Actions are async: POST returns {job: id}; poll until the job finishes."""
+    job_id = response.json()["job"]
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/jobs/{job_id}").json()
+        if job.get("status") != "running":
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish within {timeout}s")
+
+
 class FakePortal:
     def __init__(self, upload_ok=True, assign_ok=True):
         self.created, self.uploaded, self.assigned, self.deleted = [], [], [], []
@@ -153,7 +166,8 @@ def test_engine_web_dashboard_and_map(tmp_path):
     dash = client.get("/")                                   # no login required
     assert dash.status_code == 200 and "w.csv" in dash.text
 
-    client.post(f"/map/{job_id}", data={"_csrf": _csrf(dash.text), "trunk_id": "87"})
+    response = client.post(f"/map/{job_id}", data={"_csrf": _csrf(dash.text), "trunk_id": "87"})
+    _wait_job(client, response)
 
     check = Store(db)
     assert check.get_job(job_id)["trunk_id"] == 87
@@ -176,11 +190,9 @@ def test_engine_web_push_commit_refuses_unapproved_trunk(tmp_path):
     dash = client.get("/")
     assert "r.csv" in dash.text
 
-    response = client.post(f"/push/{job_id}",
-                           data={"_csrf": _csrf(dash.text), "commit": "1"},
-                           follow_redirects=False)
+    response = client.post(f"/push/{job_id}", data={"_csrf": _csrf(dash.text), "commit": "1"})
+    _wait_job(client, response)
 
-    assert response.status_code == 303
     check = Store(db)
     assert check.get_job(job_id)["status"] == "dry_run"      # refused: nothing written
     check.close()
@@ -203,7 +215,8 @@ def test_engine_web_run_one_converts_a_mapped_job(tmp_path, monkeypatch):
 
     client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
     dash = client.get("/")
-    client.post(f"/run/{job_id}", data={"_csrf": _csrf(dash.text)})   # the per-row Convert button
+    response = client.post(f"/run/{job_id}", data={"_csrf": _csrf(dash.text)})  # per-row Convert
+    _wait_job(client, response)
 
     check = Store(db)
     assert check.get_job(job_id)["status"] == "dry_run"
@@ -235,5 +248,8 @@ def test_engine_web_flash_after_scan(tmp_path, monkeypatch):
     client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
     dash = client.get("/")
 
-    page = client.post("/scan", data={"_csrf": _csrf(dash.text)})   # follows the 303 to the dashboard
+    response = client.post("/scan", data={"_csrf": _csrf(dash.text)})
+    _wait_job(client, response)
+
+    page = client.get("/")
     assert "No new decks" in page.text

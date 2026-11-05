@@ -181,6 +181,29 @@
     .empty p{margin:0;color:var(--muted)}
     .empty code{background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;border-radius:6px;padding:1px 7px}
 
+    /* live console overlay */
+    .overlay{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);
+      display:grid;place-items:center;padding:24px}
+    .overlay[hidden]{display:none}
+    .console{width:min(780px,100%);max-height:82vh;background:#0b1220;border:1px solid #1f2a44;
+      border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.45);display:flex;flex-direction:column;
+      overflow:hidden;color:#d7e2ff}
+    .console-head{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#0f1830;
+      border-bottom:1px solid #1f2a44}
+    .console-title{font-weight:700;font-size:13.5px;color:#e6edff}
+    .spinner{width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.18);
+      border-top-color:#8fb0ff;animation:spin .8s linear infinite;flex:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .console-close{margin-left:auto;background:transparent;border:0;color:#9fb2d8;font-size:20px;
+      line-height:1;cursor:pointer;padding:0 4px}
+    .console-close:hover{color:#e6edff}
+    .console-body{margin:0;padding:14px 16px;overflow:auto;flex:1;min-height:120px;white-space:pre-wrap;
+      font:12.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#c7d6f5}
+    .console-foot{padding:10px 16px;background:#0f1830;border-top:1px solid #1f2a44;color:#9fb2d8;
+      font-size:12.5px}
+    .console-foot.ok{color:#5ce1a0}
+    .console-foot.err{color:#ff9b9b}
+
     @media (max-width:760px){
       .page{padding:18px 14px 60px}
       thead{display:none}
@@ -408,6 +431,18 @@
   </section>
 </main>
 
+<div id="overlay" class="overlay" hidden>
+  <div class="console" role="dialog" aria-modal="true" aria-labelledby="ctitle">
+    <div class="console-head">
+      <span class="spinner" id="cspin"></span>
+      <span class="console-title" id="ctitle">Working...</span>
+      <button class="console-close" id="cclose" type="button" hidden aria-label="Close">&times;</button>
+    </div>
+    <pre class="console-body" id="cbody"></pre>
+    <div class="console-foot" id="cfoot">Starting...</div>
+  </div>
+</div>
+
 <script>
   function pick(jobId, trunkId) {
     var sel = document.getElementById('sel-' + jobId);
@@ -449,6 +484,76 @@
         el.style.opacity = '0';
         setTimeout(function () { el.remove(); }, 300);
       }, 6000);
+    });
+  })();
+
+  (function () {
+    var overlay = document.getElementById('overlay');
+    if (!overlay) return;
+    var title = document.getElementById('ctitle'), body = document.getElementById('cbody'),
+        foot = document.getElementById('cfoot'), close = document.getElementById('cclose'),
+        spin = document.getElementById('cspin');
+    var timer = null, jobId = null, shown = 0, done = false;
+
+    function open(label) {
+      title.textContent = label || 'Working...';
+      body.textContent = ''; shown = 0; done = false;
+      foot.textContent = 'Starting...'; foot.className = 'console-foot';
+      spin.style.display = ''; close.hidden = true; overlay.hidden = false;
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function finish(status, elapsed) {
+      done = true; stop();
+      spin.style.display = 'none';
+      foot.textContent = (status === 'done' ? 'Finished' : 'Failed') +
+        (elapsed != null ? ' in ' + elapsed + 's' : '');
+      foot.className = 'console-foot ' + (status === 'done' ? 'ok' : 'err');
+      close.hidden = false;
+      setTimeout(function () { window.location.reload(); }, 900);
+    }
+    close.addEventListener('click', function () { if (done) { overlay.hidden = true; } });
+
+    function poll() {
+      fetch('/jobs/' + jobId, { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || typeof j.status !== 'string') return;
+          var lines = j.lines || [];
+          if (lines.length > shown) {
+            body.textContent = lines.join('\n'); shown = lines.length;
+            body.scrollTop = body.scrollHeight;
+          }
+          if (j.status === 'running') {
+            foot.textContent = 'Working...' + (j.elapsed != null ? ' ' + j.elapsed + 's' : '');
+          } else {
+            finish(j.status, j.elapsed);
+          }
+        })
+        .catch(function () { /* transient; keep polling */ });
+    }
+
+    document.querySelectorAll('form[method="post"]').forEach(function (form) {
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var btn = form.querySelector('button');
+        open(btn ? btn.textContent.trim().replace(/\s*\/$/, '') : 'Working...');
+        fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin',
+                             headers: { 'Accept': 'application/json' } })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d && d.job) { jobId = d.job; timer = setInterval(poll, 700); poll(); }
+            else {
+              foot.textContent = 'Unexpected response from the engine.';
+              foot.className = 'console-foot err'; spin.style.display = 'none';
+              close.hidden = false; done = true;
+            }
+          })
+          .catch(function (err) {
+            foot.textContent = 'Request failed: ' + err;
+            foot.className = 'console-foot err'; spin.style.display = 'none';
+            close.hidden = false; done = true;
+          });
+      });
     });
   })();
 </script>

@@ -1,9 +1,11 @@
 """Local dashboard for the folder-first engine (bound to 127.0.0.1).
 
 No login - it is a localhost-only tool. CSRF protection is kept (an open page can still be cross-site
-POSTed to localhost, and a push is a real portal write). Actions run in a worker thread so Playwright's
-sync API works and the event loop stays responsive. Every action ends with a human, on-page message
-(success / info / warning / error) instead of a raw exception or a 500.
+POSTed to localhost, and a push is a real portal write).
+
+Actions run in a **background thread** and return a job id immediately, so the page never sits on a
+blocking load. The dashboard polls ``/jobs/<id>`` and streams the engine's log lines into a live console
+overlay; when the job ends it reloads and shows the resulting success/info/warning/error banner.
 """
 from __future__ import annotations
 
@@ -11,11 +13,12 @@ import contextlib
 import hmac
 import logging
 import secrets
+import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
-from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -45,6 +48,87 @@ def _open_store(db_path: str) -> Store:
     return store
 
 
+class _BufferHandler(logging.Handler):
+    """Collects log lines from the running job into its console buffer."""
+
+    def __init__(self, lines, lock):
+        super().__init__()
+        self._lines = lines
+        self._lock = lock
+        self.setFormatter(logging.Formatter("%(message)s"))
+
+    def emit(self, record):
+        try:
+            text = self.format(record)
+        except Exception:                                  # never let logging break a job
+            text = record.getMessage()
+        with self._lock:
+            self._lines.append(text)
+
+
+class _JobManager:
+    """Tiny in-memory job + flash store for a single-user local dashboard."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._jobs: dict[int, dict] = {}
+        self._counter = 0
+        self._flashes: list[dict] = []
+
+    def start(self, kind: str, action) -> int:
+        with self._lock:
+            self._counter += 1
+            job_id = self._counter
+            job = {"id": job_id, "kind": kind, "status": "running", "lines": [],
+                   "started": time.time()}
+            self._jobs[job_id] = job
+            finished = [i for i, j in self._jobs.items() if j["status"] != "running"]
+            for old in finished[:-20]:                     # keep memory bounded
+                self._jobs.pop(old, None)
+
+        def run():
+            handler = _BufferHandler(job["lines"], self._lock)
+            logger = logging.getLogger("dummy")
+            logger.addHandler(handler)
+            with self._lock:
+                job["lines"].append(f"$ {kind}")
+            try:
+                action()
+                job["status"] = "done"
+            except Exception as exc:
+                log.exception("job %s failed", job_id)
+                with self._lock:
+                    job["lines"].append(f"ERROR: {exc}")
+                self.flash("error", "Something went wrong",
+                           "The action could not be completed. Please try again.")
+                job["status"] = "error"
+            finally:
+                logger.removeHandler(handler)
+                job["finished"] = time.time()
+
+        threading.Thread(target=run, daemon=True, name=f"dummy-job-{job_id}").start()
+        return job_id
+
+    def get(self, job_id: int) -> dict | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            return {"id": job["id"], "kind": job["kind"], "status": job["status"],
+                    "lines": list(job["lines"]),
+                    "elapsed": round((job.get("finished") or time.time()) - job["started"], 1)}
+
+    def flash(self, kind: str, title: str, message: str = "") -> None:
+        with self._lock:
+            self._flashes.append({"kind": kind, "title": title, "message": message})
+
+    def pop_flashes(self) -> list[dict]:
+        with self._lock:
+            items = self._flashes
+            self._flashes = []
+            return items
+
+
 def create_app(*, db_path=None, secret=None) -> FastAPI:
     db_path = str(db_path or config.DB_PATH)
     secret_key = secret or config.SESSION_SECRET or "dev-insecure-change-me"
@@ -53,6 +137,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=secret_key, session_cookie="dummy_engine",
                        same_site="lax")
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    jobs = _JobManager()
 
     # ---- session helpers -------------------------------------------------
     def csrf_token(request: Request) -> str:
@@ -66,32 +151,10 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
         expected = request.session.get("csrf") or ""
         return bool(expected) and hmac.compare_digest(str(form.get("_csrf") or ""), expected)
 
-    def flash(request: Request, kind: str, title: str, message: str = "") -> None:
-        """Queue a one-time, human-readable message for the next page render."""
-        items = request.session.get("flash") or []
-        items.append({"kind": kind, "title": title, "message": message})
-        request.session["flash"] = items
-
-    def pop_flashes(request: Request) -> list[dict]:
-        flashes = request.session.pop("flash", None) or []
-        request.session["flash"] = []          # keep the key present so the cookie round-trips
-        return flashes
-
     def render(request: Request, name: str, **context):
         return templates.TemplateResponse(
             request=request, name=name,
             context={"request": request, "csrf": csrf_token(request), **context})
-
-    async def run_action(action):
-        """Run a blocking action in a worker thread -> (result, error_message)."""
-        try:
-            return await run_in_threadpool(action), ""
-        except Exception as exc:                       # keep the server up; report it on the page
-            log.exception("engine action failed")
-            return None, str(exc)
-
-    def back() -> RedirectResponse:
-        return RedirectResponse("/", status_code=303)
 
     # ---- routes ----------------------------------------------------------
     @app.get("/favicon.svg", include_in_schema=False)
@@ -101,19 +164,27 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
-        flashes = pop_flashes(request)
+        flashes = jobs.pop_flashes()
         store = _open_store(db_path)
         try:
-            jobs = store.list_jobs()
-            stats = {"total": len(jobs)}
-            for job in jobs:
+            all_jobs = store.list_jobs()
+            stats = {"total": len(all_jobs)}
+            for job in all_jobs:
                 stats[job["status"]] = stats.get(job["status"], 0) + 1
                 trunk = store.get_trunk(job["trunk_id"]) if job["trunk_id"] else None
                 job["trunk_label"] = trunk["trunk_name"] if trunk else ""
             trunks = store.all_trunks()
         finally:
             store.close()
-        return render(request, "engine.html", jobs=jobs, trunks=trunks, stats=stats, flashes=flashes)
+        return render(request, "engine.html", jobs=all_jobs, trunks=trunks, stats=stats,
+                      flashes=flashes)
+
+    @app.get("/jobs/{job_id}")
+    async def job_status(job_id: int):
+        job = jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("unknown job", status_code=404)
+        return job
 
     @app.post("/map/{job_id}")
     async def map_job(request: Request, job_id: int):
@@ -127,25 +198,17 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 trunk_id = form.get("trunk_id")
                 job = store.get_job(job_id)
                 if not job or not trunk_id:
-                    return None
+                    jobs.flash("warning", "No trunk selected",
+                               "Choose a trunk from the list before saving.")
+                    return
                 store.set_job_mapping(job_id, int(trunk_id))
                 trunk = store.get_trunk(int(trunk_id))
-                return {"file": job["file_name"],
-                        "trunk": trunk["trunk_name"] if trunk else f"trunk {trunk_id}"}
+                name = trunk["trunk_name"] if trunk else f"trunk {trunk_id}"
+                jobs.flash("success", "Mapping saved", f"{job['file_name']} is now mapped to {name}.")
             finally:
                 store.close()
 
-        result, error = await run_action(work)
-        if error:
-            flash(request, "error", "Couldn't save the mapping",
-                  "The deck was not updated. Please try again.")
-        elif result:
-            flash(request, "success", "Mapping saved",
-                  f"{result['file']} is now mapped to {result['trunk']}.")
-        else:
-            flash(request, "warning", "No trunk selected",
-                  "Choose a trunk from the list before saving.")
-        return back()
+        return {"job": jobs.start("Save mapping", work)}
 
     @app.post("/run")
     async def run_all(request: Request):
@@ -156,29 +219,24 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
         def work():
             store = _open_store(db_path)
             try:
-                return engine.run_mapped(store)
+                results = engine.run_mapped(store)
             finally:
                 store.close()
+            if not results:
+                jobs.flash("info", "Nothing to convert",
+                           "Map at least one deck to a trunk, then convert again.")
+                return
+            ready = sum(1 for item in results if item.get("status") == "dry_run")
+            issues = len(results) - ready
+            if issues:
+                jobs.flash("warning", "Converted with issues",
+                           f"{ready} deck(s) are ready to review; {issues} need attention - "
+                           "see the status column.")
+            else:
+                jobs.flash("success", "Conversion complete",
+                           f"{ready} deck(s) converted to our template and ready to review.")
 
-        result, error = await run_action(work)
-        if error:
-            flash(request, "error", "Conversion failed",
-                  "The decks could not be converted. Please try again.")
-            return back()
-        results = result or []
-        if not results:
-            flash(request, "info", "Nothing to convert",
-                  "Map at least one deck to a trunk, then convert again.")
-            return back()
-        ready = sum(1 for item in results if item.get("status") == "dry_run")
-        issues = len(results) - ready
-        if issues:
-            flash(request, "warning", "Converted with issues",
-                  f"{ready} deck(s) are ready to review; {issues} need attention - see the status column.")
-        else:
-            flash(request, "success", "Conversion complete",
-                  f"{ready} deck(s) converted to our template and ready to review.")
-        return back()
+        return {"job": jobs.start("Convert mapped decks", work)}
 
     @app.post("/run/{job_id}")
     async def run_one(request: Request, job_id: int):
@@ -189,27 +247,21 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
         def work():
             store = _open_store(db_path)
             try:
-                return engine.run_mapped(store, job_id)
+                results = engine.run_mapped(store, job_id)
             finally:
                 store.close()
+            first = (results or [{}])[0]
+            status = first.get("status")
+            if status == "dry_run":
+                jobs.flash("success", "Deck converted",
+                           "The deck is ready to review. Push it when you're satisfied.")
+            elif status == "validation_error":
+                jobs.flash("warning", "Deck needs attention",
+                           "It didn't pass validation - open the status details before pushing.")
+            else:
+                jobs.flash("info", "Nothing to convert", "Map this deck to a trunk first.")
 
-        result, error = await run_action(work)
-        if error:
-            flash(request, "error", "Conversion failed",
-                  "This deck could not be converted. Please try again.")
-            return back()
-        first = (result or [{}])[0]
-        status = first.get("status")
-        if status == "dry_run":
-            flash(request, "success", "Deck converted",
-                  "The deck is ready to review. Push it when you're satisfied.")
-        elif status == "validation_error":
-            flash(request, "warning", "Deck needs attention",
-                  "It didn't pass validation - open the status details before pushing.")
-        else:
-            flash(request, "info", "Nothing to convert",
-                  "Map this deck to a trunk first.")
-        return back()
+        return {"job": jobs.start("Convert deck", work)}
 
     @app.post("/scan")
     async def scan_inbox(request: Request):
@@ -220,23 +272,17 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
         def work():
             store = _open_store(db_path)
             try:
-                return engine.scan_inbox(store)
+                scanned, created = engine.scan_inbox(store)
             finally:
                 store.close()
+            if created:
+                jobs.flash("success", "Scan complete",
+                           f"{scanned} file(s) scanned, {created} new deck(s) added to the inbox.")
+            else:
+                jobs.flash("info", "No new decks",
+                           f"{scanned} file(s) scanned - nothing new to add.")
 
-        result, error = await run_action(work)
-        if error:
-            flash(request, "error", "Scan failed",
-                  "The inbox folder could not be scanned. Please try again.")
-            return back()
-        scanned, created = result or (0, 0)
-        if created:
-            flash(request, "success", "Scan complete",
-                  f"{scanned} file(s) scanned, {created} new deck(s) added to the inbox.")
-        else:
-            flash(request, "info", "No new decks",
-                  f"{scanned} file(s) scanned - nothing new to add.")
-        return back()
+        return {"job": jobs.start("Scan inbox", work)}
 
     @app.post("/push/{job_id}")
     async def push_job(request: Request, job_id: int):
@@ -252,40 +298,38 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             try:
                 job = store.get_job(job_id)
                 if not job or not job["trunk_id"]:
-                    return []
+                    jobs.flash("info", "Nothing to push",
+                               "Convert a mapped deck before pushing.")
+                    return
                 allowed, _ = commit_allowed(store, store.get_trunk(int(job["trunk_id"])))
                 portal_ctx = contextlib.nullcontext(None)
                 if commit and allowed:                   # only open a browser when we will write
                     from portal import Portal
                     portal_ctx = Portal(headless=True)
                 with portal_ctx as portal:
-                    return engine.push_jobs(store, portal, commit=commit, job_id=job_id)
+                    results = engine.push_jobs(store, portal, commit=commit, job_id=job_id)
+                item = (results or [{}])[0]
+                status = item.get("status")
+                if status == "uploaded":
+                    jobs.flash("success", "Deck pushed",
+                               f"{item.get('deck_name', 'The deck')} was created, uploaded and "
+                               "assigned to the trunk.")
+                elif status == "dry_run":
+                    jobs.flash("info", "Dry run complete",
+                               "Nothing was written to the switch. Push when you're ready.")
+                elif status == "refused":
+                    jobs.flash("warning", "Push blocked",
+                               item.get("reason") or "This trunk isn't approved for automatic writes.")
+                elif status == "failed":
+                    jobs.flash("error", "Push failed",
+                               item.get("error") or "The deck could not be pushed to the switch.")
+                else:
+                    jobs.flash("info", "Nothing to push", "Convert a mapped deck before pushing.")
             finally:
                 store.close()
 
-        result, error = await run_action(work)
-        if error:
-            flash(request, "error", "Push failed",
-                  "The deck could not be pushed to the switch. Nothing was changed.")
-            return back()
-        item = (result or [{}])[0]
-        status = item.get("status")
-        if status == "uploaded":
-            flash(request, "success", "Deck pushed",
-                  f"{item.get('deck_name', 'The deck')} was created, uploaded and assigned to the trunk.")
-        elif status == "dry_run":
-            flash(request, "info", "Dry run complete",
-                  "Nothing was written to the switch. Push when you're ready.")
-        elif status == "refused":
-            flash(request, "warning", "Push blocked",
-                  item.get("reason") or "This trunk isn't approved for automatic writes.")
-        elif status == "failed":
-            flash(request, "error", "Push failed",
-                  item.get("error") or "The deck could not be pushed to the switch.")
-        else:
-            flash(request, "info", "Nothing to push",
-                  "Convert a mapped deck before pushing.")
-        return back()
+        label = "Push to switch" if commit else "Dry run"
+        return {"job": jobs.start(label, work)}
 
     @app.get("/healthz")
     async def healthz():

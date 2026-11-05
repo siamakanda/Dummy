@@ -21,6 +21,7 @@ import argparse
 import contextlib
 import csv
 import datetime as dt
+import logging
 from pathlib import Path
 
 import config
@@ -31,6 +32,8 @@ from store import Store
 from trunk_matcher import match_trunks
 from upload import build_deck_name, build_plan, commit_allowed, find_trunk
 from validator import validate
+
+log = logging.getLogger("dummy.engine")
 
 
 def _open_store(db_path: str) -> Store:
@@ -75,6 +78,7 @@ def scan_inbox(store: Store, folder: str | Path | None = None) -> tuple[int, int
     inbox.mkdir(parents=True, exist_ok=True)
     work_root = config.ARCHIVE_DIR / dt.date.today().isoformat()
     items = DirectorySource(inbox).fetch(work_root)
+    log.info("Scanning %s (%d file(s))...", inbox, len(items))
     created = 0
     for item in items:
         deck = item.deck_files[0] if item.deck_files else None
@@ -86,8 +90,10 @@ def scan_inbox(store: Store, folder: str | Path | None = None) -> tuple[int, int
                                candidates=candidates, effective_date=item.facts.effective_date)
         if job_id:
             created += 1
+            log.info("Added %s", deck.name if deck else item.source_id)
             print(f"  job {job_id}: {deck.name if deck else '?'}  "
                   f"suggestions={[c['trunk_name'] for c in candidates] or 'none'}")
+    log.info("Scan complete: %d scanned, %d new", len(items), created)
     return len(items), created
 
 
@@ -135,8 +141,10 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
     if not path.exists():
         store.update_job(job["job_id"], status="failed", notes=f"missing file {path}")
         return {"status": "failed", "error": f"missing file {path}"}
+    log.info("Converting %s ...", path.name)
     config_for_trunk = store.get_config(int(job["trunk_id"])) or {}
     frame = to_template(read_clean(path), config_for_trunk)
+    log.info("  %d rows - validating ...", len(frame))
     issues = validate(frame)
     errors = [str(issue) for issue in issues if issue.level == "error"]
     warnings = [str(issue) for issue in issues if issue.level == "warn"]
@@ -145,9 +153,11 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
     converted = path.parent / f"{deck_name}.csv"
     frame.to_csv(converted, index=False, encoding="utf-8")
     if errors:
+        log.warning("Validation failed for %s (%d error(s))", path.name, len(errors))
         store.update_job(job["job_id"], status="validation_error", rows=len(frame),
                          converted_path=str(converted), notes="; ".join(errors[:3]))
         return {"status": "validation_error", "errors": errors, "rows": len(frame)}
+    log.info("  ready: %s (%d warning(s))", deck_name, len(warnings))
     store.update_job(job["job_id"], status="dry_run", rows=len(frame), converted_path=str(converted),
                      notes=f"{len(warnings)} warning(s)")
     return {"status": "dry_run", "rows": len(frame), "warnings": warnings,
@@ -174,18 +184,23 @@ def commit_job(store: Store, portal, job: dict) -> dict:
     deck_id = None
     created = False
     try:
+        log.info("Creating deck '%s' ...", plan.deck_name)
         deck_id = portal.create_rate_deck(plan.deck_name, description=trunk["trunk_name"],
                                           lrn_billing=True)
         created = True
+        log.info("Uploading %s row(s) ...", plan.rows)
         upload = portal.upload_rate_deck(deck_id, plan.csv_path,
                                          effective_date=plan.effective_date or None, replace=True)
         if not upload.get("ok"):
             raise RuntimeError("upload reported not ok")
+        log.info("Assigning deck %s to %s ...", deck_id, trunk["trunk_name"])
         assigned = portal.assign_deck_to_trunk(trunk["carrier_id"], trunk["trunk_id"], deck_id,
                                                expect_name=plan.deck_name)
         if not assigned.get("ok"):
             raise RuntimeError("assign to trunk failed")
+        log.info("Verified: deck %s is assigned to %s", deck_id, trunk["trunk_name"])
     except Exception as exc:
+        log.error("Push failed: %s", exc)
         if created and deck_id is not None:                 # never leave an orphan behind
             try:
                 portal.delete_rate_deck(deck_id)

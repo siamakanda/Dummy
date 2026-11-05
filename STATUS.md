@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M26 done · `pytest` → **172 passed** (offline)_
+_2026-11-04 · M1–M27 done · `pytest` → **172 passed** (offline)_
 
 ## TL;DR
 
@@ -371,4 +371,16 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   with an "N of M" count).
 - Added **flash messages** (success / info / warning / error): friendly, specific copy for every action,
   colour-coded icons, dismiss button, and auto-dismiss for success/info.
+- Verified: **172 tests**.
+
+---
+
+## 27. Live console for background actions (done)
+
+- Actions (scan / save mapping / convert / push) now run in a **background thread** and return a job id
+  immediately, so the page never sits on a blocking load.
+- The dashboard shows a **dark console overlay** streaming the engine's live log lines, with a spinner,
+  elapsed time, and a Finished/Failed footer; it reloads with the flash message when the job ends.
+- `GET /jobs/{id}` returns `{status, lines, elapsed}`; `engine.py` now logs key steps (scan, convert,
+  create → upload → assign → verify).
 - Verified: **172 tests**.
