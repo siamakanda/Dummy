@@ -1,4 +1,4 @@
-"""Dummy core engine - folder-first, Windows-local (ACTIVE on the ``engine`` branch).
+"""Dummy core engine - folder-first, Windows-local (the primary interface).
 
 The operator drops carrier rate decks into ``inbox/``. Dummy lists them next to the switch trunk
 names, the human maps each file to a trunk (CLI here, or the local ``engine_web`` dashboard), then

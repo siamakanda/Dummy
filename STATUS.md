@@ -336,7 +336,7 @@ extended.
 Answers logged: `grace_time` blank; default **12/6**; no CAPTCHA; portal IP restriction still unknown.
 `AGENTS.md` §10 updated.
 
-Engine **built** (branch `engine`): `engine.py` (`sync/scan/list/map/run/push`), `engine_web.py` (localhost
+Engine **built**: `engine.py` (`sync/scan/list/map/run/push`), `engine_web.py` (localhost
 dashboard), `deck_jobs` table. Smoke test: `scan → map → run` gave `dry_run` (237,079 rows) → `push`
 dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - Fixed a dashboard bug: Playwright's **sync** API ran inside FastAPI's event loop (commit Push 500'd);
