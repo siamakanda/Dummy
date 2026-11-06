@@ -66,8 +66,9 @@ class _JobManager:
         self._jobs: dict[int, dict] = {}
         self._counter = 0
         self._flashes: list[dict] = []
+        self._write_lock = threading.Lock()          # one switch write at a time
 
-    def start(self, kind: str, action) -> int:
+    def start(self, kind: str, action, *, write: bool = False) -> int:
         with self._lock:
             self._counter += 1
             job_id = self._counter
@@ -79,6 +80,14 @@ class _JobManager:
                 self._jobs.pop(old, None)
 
         def run():
+            if write and not self._write_lock.acquire(blocking=False):
+                with self._lock:
+                    job["lines"].append("skipped: another switch action is already running")
+                self.flash("warning", "Busy",
+                           "Another switch action is running - wait for it to finish, then retry.")
+                job["status"] = "done"
+                job["finished"] = time.time()
+                return
             handler = _BufferHandler(job["lines"], self._lock)
             logger = logging.getLogger("dummy")
             logger.addHandler(handler)
@@ -97,6 +106,8 @@ class _JobManager:
             finally:
                 logger.removeHandler(handler)
                 job["finished"] = time.time()
+                if write:
+                    self._write_lock.release()
 
         threading.Thread(target=run, daemon=True, name=f"dummy-job-{job_id}").start()
         return job_id
@@ -305,6 +316,9 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                     jobs.flash("success", "Deck uploaded",
                                f"{item.get('deck_name', 'The deck')} was created and its rates uploaded "
                                f"(deck {item.get('deck_id')}). Assign it to the trunk next.")
+                elif status == "skipped":
+                    jobs.flash("info", "Nothing to upload",
+                               item.get("reason") or "This deck is already uploaded.")
                 elif status == "refused":
                     jobs.flash("warning", "Upload blocked",
                                item.get("reason") or "This trunk isn't approved.")
@@ -314,7 +328,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             finally:
                 store.close()
 
-        return {"job": jobs.start("Upload to deck", work)}
+        return {"job": jobs.start("Upload to deck", work, write=True)}
 
     @app.post("/assign/{job_id}")
     async def assign_job_route(request: Request, job_id: int):
@@ -342,6 +356,8 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 if item.get("status") == "assigned":
                     jobs.flash("success", "Deck assigned",
                                f"{item.get('deck_name', 'The deck')} is now the rate deck on the trunk.")
+                elif item.get("status") == "skipped":
+                    jobs.flash("info", "Nothing to assign", item.get("reason") or "Already assigned.")
                 elif item.get("status") == "refused":
                     jobs.flash("warning", "Assign blocked",
                                item.get("reason") or "This trunk isn't approved for automatic writes.")
@@ -351,7 +367,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             finally:
                 store.close()
 
-        return {"job": jobs.start("Assign to trunk", work)}
+        return {"job": jobs.start("Assign to trunk", work, write=True)}
 
     @app.post("/approve/{job_id}")
     async def approve_trunk_route(request: Request, job_id: int):
@@ -375,6 +391,69 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 store.close()
 
         return {"job": jobs.start("Approve trunk", work)}
+
+    @app.post("/apply-mapping/{job_id}")
+    async def apply_mapping_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                result = engine.apply_suggestion(store, job_id)
+            finally:
+                store.close()
+            status = result.get("status")
+            if status == "dry_run":
+                jobs.flash("success", "Mapping applied",
+                           "Saved the suggested columns for this trunk and converted the deck - "
+                           "review it, then upload.")
+            elif status == "needs_mapping":
+                jobs.flash("warning", "Still incomplete",
+                           "The suggestion didn't cover every column - set the remaining aliases.")
+            elif status == "validation_error":
+                jobs.flash("warning", "Deck needs attention",
+                           "The mapping applied but the deck didn't pass validation.")
+            else:
+                jobs.flash("info", "Nothing to apply",
+                           result.get("error") or "No suggested mapping for this deck.")
+
+        return {"job": jobs.start("Apply suggested mapping", work)}
+
+    @app.post("/verify/{job_id}")
+    async def verify_deck_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                job = store.get_job(job_id)
+                if not job or not job.get("deck_id"):
+                    jobs.flash("info", "Nothing to verify", "Upload the deck first.")
+                    return
+                from portal import Portal
+                with Portal(headless=True) as portal:
+                    result = engine.verify_deck(store, portal, job)
+            finally:
+                store.close()
+            status = result.get("status")
+            if status == "found" and result.get("name_matches"):
+                jobs.flash("success", "Deck confirmed",
+                           f"Deck {result['deck_id']} '{result['name']}' exists on the switch.")
+            elif status == "found":
+                jobs.flash("warning", "Deck name differs",
+                           f"Recorded '{result['expected']}', but the switch shows '{result['name']}'.")
+            elif status == "missing":
+                jobs.flash("warning", "Deck not found",
+                           f"Deck {result['deck_id']} is not on the switch anymore (was it deleted?).")
+            else:
+                jobs.flash("error", "Verify failed",
+                           result.get("error") or "Could not read the switch.")
+
+        return {"job": jobs.start("Verify deck", work, write=True)}
 
     @app.get("/healthz")
     async def healthz():

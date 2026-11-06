@@ -106,6 +106,147 @@ def test_assign_succeeds_after_approval(tmp_path, monkeypatch):
     store.close()
 
 
+def test_upload_twice_is_idempotent(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    first = FakePortal()
+    assert engine.upload_jobs(store, first, commit=True, job_id=job_id)[0]["status"] == "uploaded"
+
+    second = FakePortal()
+    result = engine.upload_jobs(store, second, commit=True, job_id=job_id)
+
+    assert result[0]["status"] == "skipped"
+    assert second.created == []                       # no duplicate deck
+    assert store.get_job(job_id)["deck_id"] == 999
+    store.close()
+
+
+def test_assign_twice_is_idempotent(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
+    first = FakePortal()
+    assert engine.assign_jobs(store, first, commit=True, job_id=job_id)[0]["status"] == "assigned"
+
+    second = FakePortal()
+    result = engine.assign_jobs(store, second, commit=True, job_id=job_id)
+
+    assert result[0]["status"] == "skipped"
+    assert second.assigned == []
+    store.close()
+
+
+def test_verify_deck_reports_presence_and_name(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
+    job = store.get_job(job_id)
+
+    portal = FakePortal()
+    portal.decks = [{"deck_id": 999, "name": job["deck_name"], "status": "enabled"}]
+    result = engine.verify_deck(store, portal, job)
+    assert result["status"] == "found" and result["name_matches"]
+
+    portal.decks = []
+    assert engine.verify_deck(store, portal, job)["status"] == "missing"
+    store.close()
+
+
+def test_convert_uses_previous_deck_for_warnings(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    store = make_store(tmp_path)
+
+    prev = tmp_path / "prev.csv"
+    header = ("prefix,destination,inter_rate,intra_rate,indeterminate_rate,connect_fee,"
+              "init_duration,increment,grace_time,effective_date")
+    lines = [header] + [f"1{i:06d},NANPA,0.001,0.001,0.001,0,12,6,," for i in range(100)]
+    prev.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    prior_id = store.add_job("file:prev", file_path=str(prev), file_name="prev.csv")
+    store.set_job_mapping(prior_id, 87)
+    store.update_job(prior_id, status="dry_run", converted_path=str(prev), rows=100)
+
+    (tmp_path / "inbox" / BLC.name).write_bytes(BLC.read_bytes())
+    engine.cmd_scan(store, NS(dir=None))
+    job_id = [j["job_id"] for j in store.list_jobs() if j["job_id"] != prior_id][0]
+    engine.cmd_map(store, NS(job=job_id, trunk=DEV_TRUNK))
+    engine.cmd_run(store, NS(job=job_id))
+
+    job = store.get_job(job_id)
+    assert job["status"] == "dry_run"
+    assert job["notes"] != "0 warning(s)"             # row-count drop warning fired
+    store.close()
+
+
+def test_apply_suggested_mapping_converts_unknown_layout(tmp_path, monkeypatch):
+    import email_llm
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    (tmp_path / "inbox" / "mystery.csv").write_text(
+        "Alpha,Beta,Gamma\n1201200,0.0012,0.0012\n1201201,0.0023,0.0023\n",
+        encoding="utf-8")
+    monkeypatch.setattr(email_llm, "propose_mapping",
+                        lambda headers, rows=None: {"prefix": ["Alpha"],
+                                                    "inter_rate": ["Beta"],
+                                                    "intra_rate": ["Gamma"]})
+
+    store = make_store(tmp_path)
+    engine.cmd_scan(store, NS(dir=None))
+    job_id = store.list_jobs()[0]["job_id"]
+    engine.cmd_map(store, NS(job=job_id, trunk=DEV_TRUNK))
+    engine.cmd_run(store, NS(job=job_id))
+
+    job = store.get_job(job_id)
+    assert job["status"] == "needs_mapping"
+    assert job["suggested_aliases"]["prefix"] == ["Alpha"]
+
+    result = engine.apply_suggestion(store, job_id)
+
+    assert result["status"] == "dry_run"
+    assert store.get_job(job_id)["status"] == "dry_run"
+    store.close()
+
+
+def test_upload_and_assign_append_audit(tmp_path, monkeypatch):
+    audit = tmp_path / "audit.jsonl"
+    monkeypatch.setattr(config, "AUDIT_LOG", audit)
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
+    engine.assign_jobs(store, FakePortal(), commit=True, job_id=job_id)
+
+    text = audit.read_text(encoding="utf-8")
+    assert '"event": "upload"' in text and '"event": "assign"' in text
+    store.close()
+
+
+def test_job_manager_serialises_writes():
+    import threading
+    import time
+    from engine_web import _JobManager
+
+    jobs = _JobManager()
+    started, release = threading.Event(), threading.Event()
+
+    def slow():
+        started.set()
+        release.wait(3)
+
+    jobs.start("first", slow, write=True)
+    assert started.wait(2)
+
+    ran = []
+    second = jobs.start("second", lambda: ran.append(1), write=True)
+    for _ in range(150):
+        if jobs.get(second)["status"] != "running":
+            break
+        time.sleep(0.02)
+
+    assert jobs.get(second)["status"] == "done"
+    assert ran == []                                   # rejected, never ran
+    assert any(f["kind"] == "warning" for f in jobs.pop_flashes())
+    release.set()
+
+
 def _csrf(html: str) -> str:
     return re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
 
@@ -126,6 +267,7 @@ class FakePortal:
     def __init__(self, upload_ok=True, assign_ok=True):
         self.created, self.uploaded, self.assigned, self.deleted = [], [], [], []
         self.upload_ok, self.assign_ok = upload_ok, assign_ok
+        self.decks = []
 
     def create_rate_deck(self, name, **kwargs):
         self.created.append((name, kwargs))
@@ -142,6 +284,9 @@ class FakePortal:
     def delete_rate_deck(self, deck_id):
         self.deleted.append(deck_id)
         return True
+
+    def list_decks(self):
+        return self.decks
 
 
 def _mapped_job(tmp_path, monkeypatch):
@@ -169,6 +314,8 @@ def test_upload_job_creates_and_uploads_only(tmp_path, monkeypatch):
     assert portal.assigned == []                       # step 1 must NOT assign
     job = store.get_job(job_id)
     assert job["status"] == "uploaded" and job["deck_id"] == 999
+    assert job["deck_name"] and job["deck_created_at"]
+    assert job["deck_name"] in job["notes"]
     store.close()
 
 

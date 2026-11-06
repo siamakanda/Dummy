@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M29 done · `pytest` → **178 passed** (offline)_
+_2026-11-04 · M1–M30 done · `pytest` → **185 passed** (offline)_
 
 ## TL;DR
 
@@ -413,3 +413,22 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - **Approve trunk from the dashboard** — a row whose trunk isn't approved shows a one-click
   **Approve trunk** button (no CLI needed); Assign then unlocks.
 - Verified: **178 tests**.
+
+---
+
+## 30. Hardening pass: idempotency, audit, verification (done)
+
+- **Idempotent writes** — `upload_job` refuses when a deck is already recorded or the job isn't `dry_run`;
+  `assign_job` refuses when already assigned. Re-clicking **never** creates a duplicate deck.
+- **Single-writer lock** — the dashboard serialises switch actions (`_JobManager(write=True)`), so a
+  double-click or two tabs can't race two Playwright sessions.
+- **WAL + busy_timeout** on SQLite for concurrent job threads and dashboard reads.
+- **Previous-deck validation is live** — `convert_job` loads the last converted deck for the trunk
+  (`deck_history`, then `deck_jobs`) and passes it to `validate`, so row-drop / rate-change warnings fire.
+- **Audit trail** — every upload/assign appends to `data/audit.jsonl` and records `deck_history`
+  (deck id, name, rows, trunk, when).
+- **Deck reference + Verify** — `deck_jobs` records `deck_name` + `deck_created_at`; the row shows the id,
+  name and time, and **Verify** re-reads `/rate_decks` to confirm the deck exists and the name matches.
+- **Confirmation dialogs** for Upload / Assign / Approve (deck + trunk shown) — and AI **suggest mapping**
+  on `needs_mapping` (one click writes the aliases, re-converts).
+- Verified: **185 tests**.

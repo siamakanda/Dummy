@@ -22,6 +22,7 @@ import argparse
 import contextlib
 import csv
 import datetime as dt
+import json
 import logging
 from pathlib import Path
 
@@ -35,6 +36,16 @@ from upload import build_deck_name, build_plan, commit_allowed, find_trunk
 from validator import validate
 
 log = logging.getLogger("dummy.engine")
+
+
+def _audit(record: dict) -> None:
+    """Append one line to data/audit.jsonl (never let logging break a write)."""
+    try:
+        config.AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(config.AUDIT_LOG, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        log.exception("audit write failed")
 
 
 def cmd_sync(store: Store, args) -> int:
@@ -129,6 +140,24 @@ def cmd_map(store: Store, args) -> int:
     return 0
 
 
+def _previous_deck(store: Store, trunk_id: int, job_id: int):
+    """Load the last converted deck for the trunk (deck_history, then deck_jobs) for comparison."""
+    paths: list[str] = []
+    last = store.last_deck(trunk_id)
+    if last and last.get("converted_path"):
+        paths.append(last["converted_path"])
+    prior = store.previous_deck_path(trunk_id, exclude_job_id=job_id)
+    if prior:
+        paths.append(prior)
+    for path in paths:
+        if path and Path(path).exists():
+            try:
+                return read_clean(path)
+            except Exception as exc:                 # never let a bad previous deck block conversion
+                log.warning("Could not read previous deck %s: %s", path, exc)
+    return None
+
+
 def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dict:
     """Read -> template -> validate for one mapped job; updates the job row."""
     path = Path(job["file_path"])
@@ -141,12 +170,17 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
     missing = missing_required_columns(list(raw.columns), config_for_trunk.get("header_aliases"))
     if missing:
         log.warning("Unknown layout for %s: unmapped columns %s", path.name, missing)
-        store.update_job(job["job_id"], status="needs_mapping",
-                         notes=f"unmapped columns: {missing}")
-        return {"status": "needs_mapping", "missing": missing}
+        suggestion = _propose_mapping(raw)
+        note = f"unmapped columns: {missing}"
+        if suggestion:
+            note += " - AI suggested a mapping; apply it from the dashboard"
+        store.update_job(job["job_id"], status="needs_mapping", notes=note,
+                         suggested_aliases=json.dumps(suggestion) if suggestion else None)
+        return {"status": "needs_mapping", "missing": missing, "suggestion": suggestion}
     frame = to_template(raw, config_for_trunk)
+    previous = _previous_deck(store, int(job["trunk_id"]), job["job_id"])
     log.info("  %d rows - validating ...", len(frame))
-    issues = validate(frame)
+    issues = validate(frame, previous=previous)
     errors = [str(issue) for issue in issues if issue.level == "error"]
     warnings = [str(issue) for issue in issues if issue.level == "warn"]
     trunk = store.get_trunk(int(job["trunk_id"]))
@@ -165,6 +199,33 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
             "converted_path": str(converted), "deck_name": deck_name}
 
 
+def _propose_mapping(raw):
+    """Ask the LLM for header aliases (validated against the real headers); {} if unavailable."""
+    try:
+        from email_llm import propose_mapping
+        return propose_mapping(list(raw.columns), raw.head(5).to_dict("records")) or {}
+    except Exception as exc:
+        log.warning("AI mapping suggestion unavailable: %s", exc)
+        return {}
+
+
+def apply_suggestion(store: Store, job_id: int) -> dict:
+    """Write the stored AI alias suggestion into the trunk config, then re-convert the deck."""
+    job = store.get_job(job_id)
+    if not job:
+        return {"status": "failed", "error": "no such job"}
+    suggestion = job.get("suggested_aliases") or {}
+    if not suggestion:
+        return {"status": "failed", "error": "no suggested mapping for this deck"}
+    trunk_id = int(job["trunk_id"])
+    cfg = store.get_config(trunk_id) or {}
+    merged = {**(cfg.get("header_aliases") or {}), **suggestion}
+    store.set_config(trunk_id, carrier_id=cfg.get("carrier_id"), header_aliases=merged)
+    store.update_job(job_id, status="mapped", suggested_aliases=None)
+    result = convert_job(store, store.get_job(job_id))
+    return {"job_id": job_id, **result}
+
+
 def run_mapped(store: Store, job_id: int | None = None) -> list[dict]:
     """Convert + validate the mapped job(s) (or one job); returns per-job results."""
     jobs = [store.get_job(job_id)] if job_id else store.list_jobs("mapped")
@@ -177,6 +238,12 @@ def run_mapped(store: Store, job_id: int | None = None) -> list[dict]:
 
 def upload_job(store: Store, portal, job: dict) -> dict:
     """Step 1: create the deck and upload the rates. Does NOT touch a trunk, so any trunk is allowed."""
+    if job.get("deck_id"):
+        return {"job_id": job["job_id"], "status": "skipped",
+                "reason": f"deck {job['deck_id']} is already uploaded"}
+    if job.get("status") != "dry_run":
+        return {"job_id": job["job_id"], "status": "skipped",
+                "reason": f"job is '{job['status']}' - convert it first"}
     trunk = store.get_trunk(int(job["trunk_id"]))
     plan = build_plan(store, trunk["trunk_name"], job["converted_path"])
     deck_id = None
@@ -198,14 +265,22 @@ def upload_job(store: Store, portal, job: dict) -> dict:
                 pass
         store.update_job(job["job_id"], status="failed", notes=str(exc))
         return {"job_id": job["job_id"], "status": "failed", "error": str(exc)}
+    created_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     store.update_job(job["job_id"], status="uploaded", deck_id=deck_id, deck_name=plan.deck_name,
-                     notes=f"deck {deck_id} uploaded - not yet assigned")
+                     deck_created_at=created_at,
+                     notes=f"deck {deck_id} '{plan.deck_name}' created {created_at} - not yet assigned")
+    _audit({"event": "upload", "job_id": job["job_id"], "file": job["file_name"],
+            "trunk_id": trunk["trunk_id"], "trunk": trunk["trunk_name"],
+            "deck_id": deck_id, "deck_name": plan.deck_name, "rows": plan.rows,
+            "deck_created_at": created_at})
     return {"job_id": job["job_id"], "status": "uploaded", "deck_id": deck_id,
             "deck_name": plan.deck_name}
 
 
 def assign_job(store: Store, portal, job: dict) -> dict:
     """Step 2: assign the already-uploaded deck to its trunk and verify."""
+    if job.get("status") == "assigned":
+        return {"job_id": job["job_id"], "status": "skipped", "reason": "already assigned"}
     trunk = store.get_trunk(int(job["trunk_id"]))
     deck_id = job.get("deck_id")
     if not deck_id:
@@ -228,8 +303,32 @@ def assign_job(store: Store, portal, job: dict) -> dict:
         return {"job_id": job["job_id"], "status": "failed", "error": str(exc), "deck_id": deck_id}
     log.info("Verified: deck %s is assigned to %s", deck_id, trunk["trunk_name"])
     store.update_job(job["job_id"], status="assigned", deck_id=deck_id, deck_name=deck_name,
-                     notes=f"deck {deck_id} assigned to {trunk['trunk_name']}")
+                     notes=f"deck {deck_id} '{deck_name}' assigned to {trunk['trunk_name']}")
+    store.record_deck(int(trunk["trunk_id"]), job.get("effective_date"), int(job.get("rows") or 0),
+                      0, job.get("converted_path"), deck_id=deck_id)
+    _audit({"event": "assign", "job_id": job["job_id"], "file": job["file_name"],
+            "trunk_id": trunk["trunk_id"], "trunk": trunk["trunk_name"],
+            "deck_id": deck_id, "deck_name": deck_name})
     return {"job_id": job["job_id"], "status": "assigned", "deck_id": deck_id, "deck_name": deck_name}
+
+
+def verify_deck(store: Store, portal, job: dict) -> dict:
+    """Read-only: confirm the recorded deck exists on the switch and report its real name."""
+    deck_id = job.get("deck_id")
+    if not deck_id:
+        return {"status": "unknown", "error": "no deck recorded for this job - upload first"}
+    try:
+        decks = portal.list_decks()
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+    found = next((d for d in decks if str(d.get("deck_id")) == str(deck_id)), None)
+    expected = job.get("deck_name") or ""
+    if not found:
+        return {"status": "missing", "deck_id": deck_id, "expected": expected}
+    actual = found.get("name", "")
+    return {"status": "found", "deck_id": deck_id, "name": actual, "expected": expected,
+            "name_matches": actual.strip() == expected.strip(),
+            "portal_status": found.get("status", "")}
 
 
 def upload_jobs(store: Store, portal, *, commit: bool, job_id: int | None = None) -> list[dict]:
@@ -286,6 +385,8 @@ def cmd_upload(store: Store, args) -> int:
             print(f"#{item['job_id']}: refused - {item['reason']}")
         elif item["status"] == "dry_run":
             print(f"DRY RUN #{item['job_id']} -> {item['deck_name']} ({item['rows']} rows) [add --commit]")
+        elif item["status"] == "skipped":
+            print(f"#{item['job_id']}: skipped - {item.get('reason', '')}")
         else:
             print(f"#{item['job_id']} {item.get('deck_name', '')}: {item['status']} "
                   f"deck={item.get('deck_id')} {item.get('error', '')}".rstrip())
@@ -308,6 +409,8 @@ def cmd_assign(store: Store, args) -> int:
                   f"{item.get('deck_name') or ''} [add --commit]")
         elif item["status"] == "assigned":
             print(f"#{item['job_id']} {item.get('deck_name', '')}: assigned deck={item.get('deck_id')}")
+        elif item["status"] == "skipped":
+            print(f"#{item['job_id']}: skipped - {item.get('reason', '')}")
         else:
             print(f"#{item['job_id']} {item.get('deck_name', '')}: {item['status']} "
                   f"{item.get('error', '')}".rstrip())

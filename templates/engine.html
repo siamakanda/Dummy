@@ -401,6 +401,12 @@
                               .get(job.status, job.status) %}
             <span class="badge st-{{ job.status }}"><span class="dot"></span>{{ st_label }}</span>
             {% if job.notes %}<div class="note" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
+            {% if job.deck_id %}
+            <div class="meta">
+              <span class="tag">deck {{ job.deck_id }}</span>
+              {% if job.deck_name %}<span class="tag" title="created {{ job.deck_created_at or '' }}">{{ job.deck_name }}</span>{% endif %}
+            </div>
+            {% endif %}
           </td>
           <td data-l="Rows" class="rows">{{ job.rows if job.rows else '&mdash;' | safe }}</td>
           <td data-l="Actions">
@@ -411,7 +417,9 @@
             </form>
             {% elif job.status == 'dry_run' %}
             <div class="actions">
-              <form class="inline" method="post" action="/upload/{{ job.job_id }}">
+              <form class="inline" method="post" action="/upload/{{ job.job_id }}"
+                    data-confirm="Create this deck on the switch and upload its rates?"
+                    data-deck="{{ job.file_name }}" data-trunk="{{ job.trunk_label }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn primary">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -419,7 +427,9 @@
                 </button>
               </form>
               {% if job.trunk_id and not job.can_write %}
-              <form class="inline" method="post" action="/approve/{{ job.job_id }}">
+              <form class="inline" method="post" action="/approve/{{ job.job_id }}"
+                    data-confirm="Approve this trunk for future automatic writes?"
+                    data-trunk="{{ job.trunk_label }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn">Approve trunk</button>
               </form>
@@ -428,26 +438,51 @@
             {% elif job.status == 'uploaded' %}
             <div class="actions">
               {% if job.can_write %}
-              <form class="inline" method="post" action="/assign/{{ job.job_id }}">
+              <form class="inline" method="post" action="/assign/{{ job.job_id }}"
+                    data-confirm="Assign this deck to the trunk? This changes what the trunk bills with."
+                    data-deck="{{ job.deck_name or job.file_name }}" data-trunk="{{ job.trunk_label }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn primary">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
                   Assign to trunk
                 </button>
               </form>
+              <form class="inline" method="post" action="/verify/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn">Verify</button>
+              </form>
               {% else %}
-              <form class="inline" method="post" action="/approve/{{ job.job_id }}">
+              <form class="inline" method="post" action="/approve/{{ job.job_id }}"
+                    data-confirm="Approve this trunk for future automatic writes?"
+                    data-trunk="{{ job.trunk_label }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn primary">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
                   Approve trunk
                 </button>
               </form>
+              <form class="inline" method="post" action="/verify/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn">Verify</button>
+              </form>
               <span class="sub">approve, then assign</span>
               {% endif %}
             </div>
             {% elif job.status == 'assigned' %}
-            <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>assigned</span>
+            <div class="actions">
+              <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>assigned</span>
+              <form class="inline" method="post" action="/verify/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn">Verify</button>
+              </form>
+            </div>
+            {% elif job.status == 'needs_mapping' %}
+            {% if job.suggested_aliases %}
+            <form class="inline" method="post" action="/apply-mapping/{{ job.job_id }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn primary">Use suggested mapping</button>
+            </form>
+            {% else %}<span class="muted">set header aliases</span>{% endif %}
             {% else %}<span class="muted">&mdash;</span>{% endif %}
           </td>
         </tr>
@@ -569,6 +604,13 @@
 
     document.querySelectorAll('form[method="post"]').forEach(function (form) {
       form.addEventListener('submit', function (ev) {
+        var prompt = form.getAttribute('data-confirm');
+        if (prompt) {
+          var deck = form.getAttribute('data-deck') || '';
+          var trunk = form.getAttribute('data-trunk') || '';
+          var detail = (deck ? '\n\nDeck: ' + deck : '') + (trunk ? '\nTrunk: ' + trunk : '');
+          if (!confirm(prompt + detail)) { ev.preventDefault(); return; }
+        }
         ev.preventDefault();
         var btn = form.querySelector('button');
         open(btn ? btn.textContent.trim().replace(/\s*\/$/, '') : 'Working...');

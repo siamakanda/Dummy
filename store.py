@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS deck_jobs (
     converted_path TEXT,
     deck_id        INTEGER,
     deck_name      TEXT,
+    suggested_aliases TEXT,
+    deck_created_at TEXT,
     rows           INTEGER DEFAULT 0,
     changes        INTEGER DEFAULT 0,
     notes          TEXT,
@@ -135,12 +137,16 @@ class Store:
         self.path = str(path)
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA journal_mode=WAL")     # concurrent job threads + dashboard reads
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA)
         for statement in (                     # migrate older DBs
             "ALTER TABLE deck_history ADD COLUMN deck_id INTEGER",
             "ALTER TABLE trunk_config ADD COLUMN name_aliases TEXT DEFAULT '[]'",
             "ALTER TABLE deck_jobs ADD COLUMN deck_id INTEGER",
             "ALTER TABLE deck_jobs ADD COLUMN deck_name TEXT",
+            "ALTER TABLE deck_jobs ADD COLUMN suggested_aliases TEXT",
+            "ALTER TABLE deck_jobs ADD COLUMN deck_created_at TEXT",
         ):
             try:
                 self.conn.execute(statement)
@@ -333,6 +339,19 @@ class Store:
             (trunk_id,)).fetchone()
         return dict(row) if row else None
 
+    def previous_deck_path(self, trunk_id: int, exclude_job_id: int | None = None) -> str | None:
+        """Most recent converted deck for a trunk (from deck_jobs) - used for change warnings."""
+        query = ("SELECT converted_path FROM deck_jobs WHERE trunk_id = ? "
+                 "AND converted_path IS NOT NULL AND converted_path != '' "
+                 "AND status IN ('dry_run', 'uploaded', 'assigned')")
+        args: list = [trunk_id]
+        if exclude_job_id is not None:
+            query += " AND job_id != ?"
+            args.append(exclude_job_id)
+        query += " ORDER BY updated_at DESC, job_id DESC LIMIT 1"
+        row = self.conn.execute(query, tuple(args)).fetchone()
+        return row["converted_path"] if row else None
+
     def source_uploaded(self, source_id: str) -> bool:
         """True if this source (Message-ID / file hash) was already successfully uploaded."""
         row = self.conn.execute(
@@ -412,6 +431,7 @@ class Store:
     def _job(row) -> dict:
         item = dict(row)
         item["candidates"] = json.loads(item.get("candidates") or "[]")
+        item["suggested_aliases"] = json.loads(item.get("suggested_aliases") or "{}")
         return item
 
     def list_jobs(self, status: str | None = None) -> list[dict]:
