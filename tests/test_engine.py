@@ -258,6 +258,33 @@ def test_apply_suggested_mapping_converts_unknown_layout(tmp_path, monkeypatch):
     store.close()
 
 
+def test_fix_with_ai_maps_and_converts(tmp_path, monkeypatch):
+    import email_llm
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    (tmp_path / "inbox" / "mystery.csv").write_text(
+        "Alpha,Beta,Gamma\n1201200,0.0012,0.0012\n", encoding="utf-8")
+    monkeypatch.setattr(email_llm, "propose_mapping",
+                        lambda headers, rows=None, use_llm=None: {
+                            "prefix": ["Alpha"], "inter_rate": ["Beta"], "intra_rate": ["Gamma"]})
+
+    store = make_store(tmp_path)
+    engine.cmd_scan(store, NS(dir=None))
+    job_id = store.list_jobs()[0]["job_id"]
+    engine.cmd_map(store, NS(job=job_id, trunk=DEV_TRUNK))
+    engine.cmd_run(store, NS(job=job_id))
+    assert store.get_job(job_id)["status"] == "needs_mapping"
+
+    store.update_job(job_id, effective_date="2026-11-13")
+    result = engine.fix_with_ai(store, job_id)
+
+    assert result["status"] == "dry_run"
+    assert store.get_job(job_id)["status"] == "dry_run"
+    assert store.get_config(87)["header_aliases"]["prefix"] == ["Alpha"]
+    store.close()
+
+
 def test_upload_and_assign_append_audit(tmp_path, monkeypatch):
     audit = tmp_path / "audit.jsonl"
     monkeypatch.setattr(config, "AUDIT_LOG", audit)

@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M32 done · `pytest` → **190 passed** (offline)_
+_2026-11-04 · M1–M33 done · `pytest` → **195 passed** (offline)_
 
 ## TL;DR
 
@@ -462,3 +462,16 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - Dashboard **Redo** button on uploaded rows (with confirm) + CLI `python engine.py redo --job N --commit`.
 - Audit event `redo` records the deleted deck id.
 - Verified: **190 tests**.
+
+---
+
+## 33. Bounded AI mapping agent ("Fix with AI") (done)
+
+- New `mapping_agent.py`: a **bounded** loop (`max_steps=3`) using only local read-only tools —
+  `missing_required_columns` → `propose_mapping` (validated against real headers) → `to_template` →
+  `validate`. It stops at `needs_human` rather than guessing.
+- `engine.fix_with_ai` merges the verified aliases into `trunk_config.header_aliases` and re-converts;
+  on failure it stores the best attempt as `suggested_aliases` and reports what is missing.
+- Dashboard **Fix with AI** button on `needs_mapping` rows; `POST /fix-ai/{job_id}` (no portal access).
+- Degrades silently when there is no LLM key / the call fails; the LLM can never invent a column.
+- Verified: **195 tests**.

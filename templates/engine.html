@@ -491,12 +491,16 @@
             </div>
             {% elif job.status == 'needs_mapping' %}
             <div class="actions">
+              <form class="inline" method="post" action="/fix-ai/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn primary">Fix with AI</button>
+              </form>
               {% if job.suggested_aliases %}
               <form class="inline" method="post" action="/apply-mapping/{{ job.job_id }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="btn primary">Use suggested mapping</button>
+                <button class="btn">Use suggested</button>
               </form>
-              {% else %}<span class="muted">set header aliases</span>{% endif %}
+              {% endif %}
               {% if not job.effective_date %}
               <form class="inline" method="post" action="/date/{{ job.job_id }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">

@@ -518,6 +518,40 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
 
         return {"job": jobs.start("Redo upload", work, write=True)}
 
+    @app.post("/fix-ai/{job_id}")
+    async def fix_ai_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                result = engine.fix_with_ai(store, job_id)
+            finally:
+                store.close()
+            status = result.get("status")
+            if status == "dry_run":
+                jobs.flash("success", "AI mapping applied",
+                           f"Mapped in {result.get('steps', 1)} step(s) and converted "
+                           f"{result.get('rows', 0)} rows - review it, then upload.")
+            elif status == "needs_human":
+                jobs.flash("warning", "AI couldn't finish",
+                           result.get("notes") or "Some columns still aren't mapped.")
+            elif status == "needs_date":
+                jobs.flash("info", "Mapped, date still needed",
+                           "Set the effective date, then convert and upload.")
+            elif status == "needs_mapping":
+                jobs.flash("warning", "Still unmapped", "Some columns are still missing.")
+            elif status == "validation_error":
+                jobs.flash("warning", "Deck needs attention",
+                           "The mapping applied but the deck didn't pass validation.")
+            else:
+                jobs.flash("error", "Fix with AI failed",
+                           result.get("error") or "The agent could not run.")
+
+        return {"job": jobs.start("Fix with AI", work)}
+
     @app.get("/healthz")
     async def healthz():
         try:

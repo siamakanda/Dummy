@@ -365,6 +365,31 @@ def verify_deck(store: Store, portal, job: dict) -> dict:
             "portal_status": found.get("status", "")}
 
 
+def fix_with_ai(store: Store, job_id: int) -> dict:
+    """Run the bounded mapping agent; if it verifies a mapping, apply it and re-convert."""
+    job = store.get_job(job_id)
+    if not job:
+        return {"status": "failed", "error": "no such job"}
+    path = Path(job["file_path"])
+    if not path.exists():
+        return {"status": "failed", "error": f"missing file {path}"}
+    cfg = store.get_config(int(job["trunk_id"])) or {}
+    raw = read_clean(path)
+    from mapping_agent import analyze
+    result = analyze(raw, base_aliases=cfg.get("header_aliases"))
+    if result.status != "mapped":
+        store.update_job(job_id,
+                         suggested_aliases=json.dumps(result.aliases) if result.aliases else None,
+                         notes=f"AI: {result.notes}")
+        return {"status": "needs_human", "missing": result.missing, "errors": result.errors,
+                "steps": result.steps, "notes": result.notes}
+    merged = {**(cfg.get("header_aliases") or {}), **result.aliases}
+    store.set_config(int(job["trunk_id"]), carrier_id=cfg.get("carrier_id"), header_aliases=merged)
+    store.update_job(job_id, status="mapped", suggested_aliases=None)
+    return {"job_id": job_id, "steps": result.steps, "notes": result.notes,
+            **convert_job(store, store.get_job(job_id))}
+
+
 def redo_upload(store: Store, portal, job: dict) -> dict:
     """Delete an uploaded (unassigned) deck and reset the job so it can be uploaded again."""
     deck_id = job.get("deck_id")

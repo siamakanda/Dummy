@@ -49,6 +49,9 @@ summarises the result. Real writes happen only on **Upload** / **Assign** (or `-
   button (same effect as `review.py approve-trunk`); Assign then unlocks.
 - **Deck reference + Verify** — an uploaded/assigned deck shows its id, name and creation time; **Verify**
   re-reads the switch to confirm the deck still exists and the name matches what we recorded.
+- **Fix with AI** — an unknown layout offers a one-click agent that proposes column aliases, converts
+  and validates **locally** (no portal access), and applies only if the result is clean; otherwise it
+  explains what couldn't be mapped. It can only name columns that actually exist.
 - **Effective date is never guessed** — if the email/file has no reliable date, the row shows **date
   needed** with a date input and a filename hint; Upload stays blocked until you set it.
 - **Redo** — an uploaded (not yet assigned) deck can be deleted and the job reset (to fix a wrong name or
