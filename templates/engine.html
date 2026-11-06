@@ -158,8 +158,11 @@
     .st-uploaded{background:#e0f2fe;color:#0369a1}
     .st-assigned{background:var(--green-bg);color:#067647}
     .st-needs_mapping{background:#fef0c7;color:#93370d}
+    .st-needs_date{background:#fef0c7;color:#93370d}
     .st-failed,.st-validation_error{background:var(--red-bg);color:var(--red)}
     .st-skipped{background:var(--slate-bg);color:var(--slate)}
+    .datein{padding:7px 9px;border:1px solid var(--line);border-radius:9px;font:inherit;
+      font-size:12.5px;background:var(--surface);color:var(--ink)}
     .note{color:var(--faint);font-size:11.5px;margin-top:5px;max-width:210px;
       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -312,7 +315,7 @@
     </div>
     <div class="stat">
       <span class="ico i-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
-      <div><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) + stats.get('needs_mapping', 0) }}</div><div class="l">Problems</div></div>
+      <div><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) + stats.get('needs_mapping', 0) + stats.get('needs_date', 0) }}</div><div class="l">Problems</div></div>
     </div>
   </section>
 
@@ -334,6 +337,7 @@
         <option value="uploaded">Uploaded (unassigned)</option>
         <option value="assigned">Assigned</option>
         <option value="needs_mapping">Mapping needed</option>
+        <option value="needs_date">Date needed</option>
         <option value="validation_error">Validation error</option>
         <option value="failed">Failed</option>
       </select>
@@ -365,6 +369,8 @@
                 effective {{ job.effective_date }}
               </span>
             </div>
+            {% elif job.date_hint %}
+            <div class="meta"><span class="tag" title="from the filename - confirm before using">hint {{ job.date_hint }}</span></div>
             {% endif %}
             {% if job.candidates %}
             <div class="sugg">
@@ -397,7 +403,8 @@
           </td>
           <td data-l="Status">
             {% set st_label = {'dry_run': 'ready to upload', 'uploaded': 'uploaded (unassigned)',
-                               'needs_mapping': 'mapping needed', 'validation_error': 'validation error'}
+                               'needs_mapping': 'mapping needed', 'needs_date': 'date needed',
+                               'validation_error': 'validation error'}
                               .get(job.status, job.status) %}
             <span class="badge st-{{ job.status }}"><span class="dot"></span>{{ st_label }}</span>
             {% if job.notes %}<div class="note" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
@@ -477,12 +484,27 @@
               </form>
             </div>
             {% elif job.status == 'needs_mapping' %}
-            {% if job.suggested_aliases %}
-            <form class="inline" method="post" action="/apply-mapping/{{ job.job_id }}">
+            <div class="actions">
+              {% if job.suggested_aliases %}
+              <form class="inline" method="post" action="/apply-mapping/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn primary">Use suggested mapping</button>
+              </form>
+              {% else %}<span class="muted">set header aliases</span>{% endif %}
+              {% if not job.effective_date %}
+              <form class="inline" method="post" action="/date/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="date" name="effective_date" class="datein" value="{{ job.date_hint or '' }}" required>
+                <button class="btn">Set date</button>
+              </form>
+              {% endif %}
+            </div>
+            {% elif job.status == 'needs_date' %}
+            <form class="inline" method="post" action="/date/{{ job.job_id }}">
               <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="btn primary">Use suggested mapping</button>
+              <input type="date" name="effective_date" class="datein" value="{{ job.date_hint or '' }}" required>
+              <button class="btn primary">Set date</button>
             </form>
-            {% else %}<span class="muted">set header aliases</span>{% endif %}
             {% else %}<span class="muted">&mdash;</span>{% endif %}
           </td>
         </tr>

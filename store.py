@@ -115,6 +115,8 @@ CREATE TABLE IF NOT EXISTS deck_jobs (
     deck_name      TEXT,
     suggested_aliases TEXT,
     deck_created_at TEXT,
+    date_hint      TEXT,
+    date_source    TEXT,
     rows           INTEGER DEFAULT 0,
     changes        INTEGER DEFAULT 0,
     notes          TEXT,
@@ -147,6 +149,8 @@ class Store:
             "ALTER TABLE deck_jobs ADD COLUMN deck_name TEXT",
             "ALTER TABLE deck_jobs ADD COLUMN suggested_aliases TEXT",
             "ALTER TABLE deck_jobs ADD COLUMN deck_created_at TEXT",
+            "ALTER TABLE deck_jobs ADD COLUMN date_hint TEXT",
+            "ALTER TABLE deck_jobs ADD COLUMN date_source TEXT",
         ):
             try:
                 self.conn.execute(statement)
@@ -416,15 +420,16 @@ class Store:
 
     # ---- folder-first engine jobs ---------------------------------------
     def add_job(self, source_id: str, *, file_path="", file_name="", candidates=None,
-                effective_date="") -> int | None:
+                effective_date="", date_hint="", date_source="") -> int | None:
         """Create a deck job (idempotent by source_id); returns None if it already existed."""
         with self.conn:
             cursor = self.conn.execute(
                 "INSERT INTO deck_jobs(source_id, file_path, file_name, candidates, effective_date, "
-                "status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, 'unmapped', ?, ?) "
+                "date_hint, date_source, status, created_at, updated_at) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, 'unmapped', ?, ?) "
                 "ON CONFLICT(source_id) DO NOTHING",
                 (source_id, str(file_path), file_name, json.dumps(candidates or []),
-                 effective_date, _now(), _now()))
+                 effective_date, date_hint, date_source, _now(), _now()))
         return int(cursor.lastrowid) if cursor.rowcount else None
 
     @staticmethod

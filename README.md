@@ -49,6 +49,8 @@ summarises the result. Real writes happen only on **Upload** / **Assign** (or `-
   button (same effect as `review.py approve-trunk`); Assign then unlocks.
 - **Deck reference + Verify** — an uploaded/assigned deck shows its id, name and creation time; **Verify**
   re-reads the switch to confirm the deck still exists and the name matches what we recorded.
+- **Effective date is never guessed** — if the email/file has no reliable date, the row shows **date
+  needed** with a date input and a filename hint; Upload stays blocked until you set it.
 - **Live console overlay** — streams the engine’s log lines while a background job runs.
 - **Flash messages** — success / info / warning / error, with auto-dismiss.
 - Localhost only, **no login** (CSRF-protected), with a favicon.

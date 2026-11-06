@@ -4,6 +4,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
+from mapper import parse_date_from_filename
 from store import Store
 from upload import (build_deck_name, build_plan, commit_allowed, execute,
                     load_effective_date, print_plan)
@@ -51,7 +52,27 @@ def test_build_deck_name_with_date():
 
 
 def test_build_deck_name_without_date():
-    assert build_deck_name("BTCL TNT TRUNK", None, today=dt.date(2026, 11, 3)) == "BTCL TNT TRUNK 11_03_2026"
+    assert build_deck_name("BTCL TNT TRUNK", None) is None
+    assert build_deck_name("BTCL TNT TRUNK", "") is None
+
+
+def test_parse_date_from_filename():
+    assert parse_date_from_filename("InstaCall_ICRA_23599_E20261113_US.csv") == "2026-11-13"
+    assert parse_date_from_filename("deck_20261113.csv") == "2026-11-13"
+    assert parse_date_from_filename("deck_2026-11-13.csv") == "2026-11-13"
+    assert parse_date_from_filename("deck_11_13_2026.csv") == "2026-11-13"
+    assert parse_date_from_filename("deck.csv") == ""
+
+
+def test_build_plan_requires_date(tmp_path):
+    store = make_store(tmp_path)
+    deck = write_deck(tmp_path / "deck.csv", effective="")
+    try:
+        build_plan(store, "BTCL TNT TRUNK", deck)
+    except ValueError as exc:
+        assert "effective date required" in str(exc)
+    else:
+        raise AssertionError("expected ValueError when no effective date")
 
 
 def test_load_effective_date(tmp_path):

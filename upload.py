@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import config
 from cleaner import read_clean
+from mapper import DATE_FORMATS
 from store import Store
 
 @dataclass
@@ -38,16 +39,26 @@ def load_effective_date(csv_path) -> str | None:
             return text
     return None
 
-def build_deck_name(trunk_name: str, effective_date: str | None, today: dt.date | None = None) -> str:
-    """`<trunk name> MM_DD_YYYY` from the deck's effective date (or today when it has none)."""
-    today = today or dt.date.today()
-    stamp = today.strftime(config.DECK_NAME_DATE_FORMAT)
-    if effective_date:
+def build_deck_name(trunk_name: str, effective_date: str | None,
+                    today: dt.date | None = None) -> str | None:
+    """`<trunk name> MM_DD_YYYY` from the effective date; ``None`` when there is no usable date.
+
+    Never invents a date: a missing/unparseable date must be set by a human (``today`` is kept for
+    signature compatibility only and is ignored).
+    """
+    if not effective_date:
+        return None
+    text = str(effective_date).strip()
+    day = None
+    for fmt in DATE_FORMATS:
         try:
-            stamp = dt.datetime.strptime(effective_date, "%Y-%m-%d").strftime(config.DECK_NAME_DATE_FORMAT)
+            day = dt.datetime.strptime(text, fmt).date()
+            break
         except ValueError:
-            pass
-    return f"{trunk_name} {stamp}"
+            continue
+    if day is None:
+        return None
+    return f"{trunk_name} {day.strftime(config.DECK_NAME_DATE_FORMAT)}"
 
 def find_trunk(store: Store, trunk_name: str) -> dict | None:
     wanted = trunk_name.strip().lower()
@@ -65,24 +76,28 @@ def commit_allowed(store: Store, trunk: dict) -> tuple[bool, str]:
     return False, (f"trunk '{trunk['trunk_name']}' is not approved and not the development trunk "
                    f"({config.DEV_TRUNK_NAME}); refusing to write")
 
-def build_plan(store: Store, trunk_name: str, csv_path, *, today: dt.date | None = None) -> Plan:
+def build_plan(store: Store, trunk_name: str, csv_path, *, today: dt.date | None = None,
+               effective_date: str | None = None) -> Plan:
     trunk = find_trunk(store, trunk_name)
     if trunk is None:
         raise SystemExit(f"trunk '{trunk_name}' not found in the store (run scrape_trunks.py / load_trunks first)")
     frame = read_clean(csv_path)
-    effective = None
-    if "effective_date" in frame.columns:
+    effective = effective_date
+    if not effective and "effective_date" in frame.columns:
         for value in frame["effective_date"]:
             text = str(value).strip()
             if text:
                 effective = text
                 break
+    deck_name = build_deck_name(str(trunk["trunk_name"]), effective)
+    if deck_name is None:
+        raise ValueError(f"effective date required for trunk '{trunk['trunk_name']}' (got {effective!r})")
     return Plan(
         trunk_id=int(trunk["trunk_id"]),
         trunk_name=str(trunk["trunk_name"]),
         carrier_id=trunk.get("carrier_id"),
         carrier_name=str(trunk.get("carrier_name") or ""),
-        deck_name=build_deck_name(str(trunk["trunk_name"]), effective, today),
+        deck_name=deck_name,
         effective_date=effective,
         csv_path=str(csv_path),
         rows=len(frame),
@@ -94,7 +109,7 @@ def print_plan(plan: Plan, out=print) -> None:
     out(f"  deck name   : {plan.deck_name}")
     out(f"  use LRN     : {'yes' if plan.lrn_billing else 'no'}   (Use LRN for billing)")
     out(f"  type / mode : carrier / npanxx")
-    out(f"  effective   : {plan.effective_date or '(none - upload date defaults to today)'}")
+    out(f"  effective   : {plan.effective_date or '(none)'}")
     out(f"  replace     : {'yes' if plan.replace else 'no'}")
     out(f"  file        : {plan.csv_path} ({plan.rows} rows)")
 
@@ -130,10 +145,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     with Store.open(args.db) as store:
-        plan = build_plan(store, args.trunk, args.csv_path)
+        try:
+            plan = build_plan(store, args.trunk, args.csv_path)
+        except ValueError as exc:
+            print(f"\n{exc}\nSet the effective date with --effective-date YYYY-MM-DD.", file=sys.stderr)
+            return 2
         if args.effective_date:
+            name = build_deck_name(plan.trunk_name, args.effective_date)
+            if name is None:
+                print(f"\ninvalid --effective-date {args.effective_date!r} (use YYYY-MM-DD)", file=sys.stderr)
+                return 2
             plan.effective_date = args.effective_date
-            plan.deck_name = build_deck_name(plan.trunk_name, args.effective_date)
+            plan.deck_name = name
         if args.no_replace:
             plan.replace = False
         print_plan(plan)

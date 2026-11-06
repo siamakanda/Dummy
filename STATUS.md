@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M30 done · `pytest` → **185 passed** (offline)_
+_2026-11-04 · M1–M31 done · `pytest` → **188 passed** (offline)_
 
 ## TL;DR
 
@@ -432,3 +432,21 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - **Confirmation dialogs** for Upload / Assign / Approve (deck + trunk shown) — and AI **suggest mapping**
   on `needs_mapping` (one click writes the aliases, re-converts).
 - Verified: **185 tests**.
+
+---
+
+## 31. Effective date is never guessed (done)
+
+- Root cause of the wrong date: `DirectorySource` only read a sidecar/column date, and `build_deck_name`
+  silently fell back to **today**; `build_plan` also recomputed from the converted CSV, so the job's own
+  date was ignored at upload.
+- **`build_deck_name` now returns `None`** when there is no usable date (no `today` fallback), and
+  `build_plan` raises `effective date required`.
+- `convert_job` marks the job **`needs_date`** (no converted file) until a date exists; `upload_job`
+  refuses and passes the job's date into `build_plan`.
+- **Filename hint** — `mapper.parse_date_from_filename` recognises `E20261113`, `20261113`, `2026-11-13`,
+  `11_13_2026`, `11/13/2026`; stored as `date_hint` and shown as a hint, **never applied automatically**.
+- **Dashboard**: `needs_date` status + date input (prefilled with the hint) → `POST /date/{job_id}` →
+  `apply_date` sets the date (`date_source="manual"`) and re-converts.
+- Orchestrator escalates to `needs_human`/`needs_date` instead of inventing a date.
+- Verified: **188 tests**.

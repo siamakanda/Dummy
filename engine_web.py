@@ -455,6 +455,37 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
 
         return {"job": jobs.start("Verify deck", work, write=True)}
 
+    @app.post("/date/{job_id}")
+    async def set_date_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                result = engine.apply_date(store, job_id, str(form.get("effective_date") or ""))
+            finally:
+                store.close()
+            status = result.get("status")
+            if status == "dry_run":
+                jobs.flash("success", "Date set",
+                           f"{result.get('deck_name', 'Deck')} - review it, then upload.")
+            elif status == "needs_date":
+                jobs.flash("warning", "Date still needed",
+                           "Enter a valid effective date (YYYY-MM-DD).")
+            elif status == "needs_mapping":
+                jobs.flash("warning", "Mapping needed",
+                           "The date is set, but some columns are still unmapped.")
+            elif status == "validation_error":
+                jobs.flash("warning", "Deck needs attention",
+                           "The date is set but the deck didn't pass validation.")
+            else:
+                jobs.flash("error", "Could not set date",
+                           result.get("error") or "Use a valid YYYY-MM-DD date.")
+
+        return {"job": jobs.start("Set effective date", work)}
+
     @app.get("/healthz")
     async def healthz():
         try:

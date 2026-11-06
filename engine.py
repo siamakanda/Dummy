@@ -29,7 +29,7 @@ from pathlib import Path
 import config
 from cleaner import read_clean
 from input_sources import DirectorySource
-from mapper import missing_required_columns, to_template
+from mapper import missing_required_columns, parse_date_from_filename, parse_effective_date, to_template
 from store import Store
 from trunk_matcher import match_trunks
 from upload import build_deck_name, build_plan, commit_allowed, find_trunk
@@ -92,7 +92,9 @@ def scan_inbox(store: Store, folder: str | Path | None = None) -> tuple[int, int
                       for c in match.candidates[:5]]
         job_id = store.add_job(item.source_id, file_path=str(deck or ""),
                                file_name=(deck.name if deck else item.source_id),
-                               candidates=candidates, effective_date=item.facts.effective_date)
+                               candidates=candidates, effective_date=item.facts.effective_date,
+                               date_hint=parse_date_from_filename(deck.name if deck else item.source_id),
+                               date_source=("auto" if item.facts.effective_date else "none"))
         if job_id:
             created += 1
             log.info("Added %s", deck.name if deck else item.source_id)
@@ -177,6 +179,11 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
         store.update_job(job["job_id"], status="needs_mapping", notes=note,
                          suggested_aliases=json.dumps(suggestion) if suggestion else None)
         return {"status": "needs_mapping", "missing": missing, "suggestion": suggestion}
+    if not job.get("effective_date"):
+        log.warning("No effective date for %s - set it before uploading", path.name)
+        store.update_job(job["job_id"], status="needs_date",
+                         notes="no effective date - set it on the dashboard")
+        return {"status": "needs_date"}
     frame = to_template(raw, config_for_trunk)
     previous = _previous_deck(store, int(job["trunk_id"]), job["job_id"])
     log.info("  %d rows - validating ...", len(frame))
@@ -185,6 +192,10 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
     warnings = [str(issue) for issue in issues if issue.level == "warn"]
     trunk = store.get_trunk(int(job["trunk_id"]))
     deck_name = build_deck_name(trunk["trunk_name"], job["effective_date"], today)
+    if deck_name is None:
+        store.update_job(job["job_id"], status="needs_date",
+                         notes=f"effective date '{job['effective_date']}' is not a valid date")
+        return {"status": "needs_date"}
     converted = path.parent / f"{deck_name}.csv"
     frame.to_csv(converted, index=False, encoding="utf-8")
     if errors:
@@ -194,7 +205,7 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
         return {"status": "validation_error", "errors": errors, "rows": len(frame)}
     log.info("  ready: %s (%d warning(s))", deck_name, len(warnings))
     store.update_job(job["job_id"], status="dry_run", rows=len(frame), converted_path=str(converted),
-                     notes=f"{len(warnings)} warning(s)")
+                     deck_name=deck_name, notes=f"{len(warnings)} warning(s)")
     return {"status": "dry_run", "rows": len(frame), "warnings": warnings,
             "converted_path": str(converted), "deck_name": deck_name}
 
@@ -226,6 +237,20 @@ def apply_suggestion(store: Store, job_id: int) -> dict:
     return {"job_id": job_id, **result}
 
 
+def apply_date(store: Store, job_id: int, value: str) -> dict:
+    """Set the job's effective date (manual override) and re-convert the deck."""
+    job = store.get_job(job_id)
+    if not job:
+        return {"status": "failed", "error": "no such job"}
+    iso = parse_effective_date(str(value or "").strip())
+    try:
+        dt.date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return {"status": "failed", "error": "invalid date - use YYYY-MM-DD"}
+    store.update_job(job_id, effective_date=iso, date_source="manual", status="mapped")
+    return {"job_id": job_id, **convert_job(store, store.get_job(job_id))}
+
+
 def run_mapped(store: Store, job_id: int | None = None) -> list[dict]:
     """Convert + validate the mapped job(s) (or one job); returns per-job results."""
     jobs = [store.get_job(job_id)] if job_id else store.list_jobs("mapped")
@@ -244,8 +269,17 @@ def upload_job(store: Store, portal, job: dict) -> dict:
     if job.get("status") != "dry_run":
         return {"job_id": job["job_id"], "status": "skipped",
                 "reason": f"job is '{job['status']}' - convert it first"}
+    if not job.get("effective_date"):
+        return {"job_id": job["job_id"], "status": "skipped",
+                "reason": "set the effective date first"}
     trunk = store.get_trunk(int(job["trunk_id"]))
-    plan = build_plan(store, trunk["trunk_name"], job["converted_path"])
+    try:
+        plan = build_plan(store, trunk["trunk_name"], job["converted_path"],
+                          effective_date=job["effective_date"])
+    except ValueError as exc:
+        return {"job_id": job["job_id"], "status": "skipped", "reason": str(exc)}
+    if job.get("deck_name"):
+        plan.deck_name = job["deck_name"]
     deck_id = None
     try:
         log.info("Creating deck '%s' ...", plan.deck_name)

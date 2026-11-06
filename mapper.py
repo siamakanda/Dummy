@@ -7,6 +7,7 @@ when the carrier gives no indeterminate rate. All operations are vectorised so f
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, Mapping
 
@@ -64,6 +65,34 @@ def parse_effective_date(text: str) -> str:
         except ValueError:
             continue
     return text  # unparseable; the validator will flag it
+
+def parse_date_from_filename(name: str) -> str:
+    """Best-effort ISO date embedded in a filename (e.g. ``..._E20261113_...``); ``""`` if none.
+
+    This is a **hint only** - filenames can lie (ANI ``10_28`` was effective Oct 29), so callers show
+    it to a human instead of using it automatically.
+    """
+    text = str(name or "")
+    patterns = (
+        (r"(?i)(?<![A-Za-z])E(20\d{2})(\d{2})(\d{2})(?!\d)", "ymd"),
+        (r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)", "ymd"),
+        (r"(20\d{2})[-_](\d{2})[-_](\d{2})", "ymd"),
+        (r"(?<!\d)(\d{2})[-_](\d{2})[-_](20\d{2})(?!\d)", "mdy"),
+        (r"(?<!\d)(\d{1,2})/(\d{1,2})/(20\d{2})(?!\d)", "mdy"),
+    )
+    for pattern, order in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        a, b, c = match.groups()
+        year, month, day = (a, b, c) if order == "ymd" else (c, a, b)
+        try:
+            date = _dt.date(int(year), int(month), int(day))
+        except (TypeError, ValueError):
+            continue
+        if 2000 <= date.year <= 2100:
+            return date.strftime(config.EFFECTIVE_DATE_FORMAT)
+    return ""
 
 def resolve_columns(
     headers: Iterable[str], extra_aliases: Mapping[str, Iterable[str]] | None = None

@@ -239,11 +239,17 @@ def _process_single(store: Store, source_id: str, facts: EmailFacts, path: Path,
         return {"status": "validation_error", "run_id": run_id, "source_id": source_id,
                 "errors": [str(issue) for issue in errors]}
 
+    if trunk_id and not facts.effective_date:
+        summary = f"{path.name}: no effective date - set it before upload"
+        store.finish_run(run_id, trunk_id=trunk_id, status="needs_date", notes=summary)
+        notify(f"NEEDS HUMAN - {summary}")
+        return {"status": "needs_date", "run_id": run_id, "source_id": source_id}
+
     changes = count_changes(previous, df)
     rows = len(df)
     if trunk_id:
         trunk = store.get_trunk(trunk_id)
-        deck_name = build_deck_name(trunk["trunk_name"], facts.effective_date, today)
+        deck_name = build_deck_name(trunk["trunk_name"], facts.effective_date)
         converted_path = work_dir / f"{deck_name}.csv"
     else:
         trunk = None
@@ -384,7 +390,10 @@ def process_pending(store: Store, *, portal, commit: bool, notify=None,
                 notify(f"NEEDS HUMAN - pending #{item['id']}: {trunk['trunk_name']} needs approval")
                 continue
         run_id = item.get("run_id") or store.start_run(item["source_id"])
-        deck_name = build_deck_name(trunk["trunk_name"], item.get("effective_date"), today)
+        deck_name = build_deck_name(trunk["trunk_name"], item.get("effective_date"))
+        if not deck_name:
+            notify(f"NEEDS HUMAN - pending #{item['id']}: no effective date")
+            continue
         result = _commit(store, run_id, item["source_id"], trunk, deck_name,
                          Path(item["converted_path"]), item.get("effective_date"),
                          item.get("rows") or 0, item.get("changes") or 0, portal=portal, notify=notify)

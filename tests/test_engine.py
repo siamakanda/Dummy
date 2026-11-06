@@ -134,6 +134,30 @@ def test_assign_twice_is_idempotent(tmp_path, monkeypatch):
     store.close()
 
 
+def test_convert_needs_date_then_apply_date(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    (tmp_path / "inbox" / "mystery_20261113.csv").write_text(
+        "prefix,inter_rate,intra_rate\n1201200,0.0012,0.0012\n", encoding="utf-8")
+
+    store = make_store(tmp_path)
+    engine.cmd_scan(store, NS(dir=None))
+    job_id = store.list_jobs()[0]["job_id"]
+    engine.cmd_map(store, NS(job=job_id, trunk=DEV_TRUNK))
+    engine.cmd_run(store, NS(job=job_id))
+
+    job = store.get_job(job_id)
+    assert job["status"] == "needs_date"
+    assert job["date_hint"] == "2026-11-13"          # filename hint, not applied automatically
+
+    result = engine.apply_date(store, job_id, "2026-11-13")
+
+    assert result["status"] == "dry_run"
+    assert "11_13_2026" in store.get_job(job_id)["deck_name"]
+    store.close()
+
+
 def test_verify_deck_reports_presence_and_name(tmp_path, monkeypatch):
     store, job_id = _mapped_job(tmp_path, monkeypatch)
     engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
@@ -198,6 +222,7 @@ def test_apply_suggested_mapping_converts_unknown_layout(tmp_path, monkeypatch):
     job = store.get_job(job_id)
     assert job["status"] == "needs_mapping"
     assert job["suggested_aliases"]["prefix"] == ["Alpha"]
+    store.update_job(job_id, effective_date="2026-11-13")   # date is required before convert
 
     result = engine.apply_suggestion(store, job_id)
 
