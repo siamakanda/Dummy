@@ -253,3 +253,21 @@ def test_engine_web_flash_after_scan(tmp_path, monkeypatch):
 
     page = client.get("/")
     assert "No new decks" in page.text
+
+
+def test_unknown_layout_marks_needs_mapping(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(config, "ARCHIVE_DIR", tmp_path / "archive")
+    (tmp_path / "inbox").mkdir()
+    (tmp_path / "inbox" / "mystery.csv").write_text("Foo,Bar,Baz\n1,2,3\n", encoding="utf-8")
+    store = make_store(tmp_path)
+
+    engine.cmd_scan(store, NS(dir=None))
+    job_id = store.list_jobs()[0]["job_id"]
+    engine.cmd_map(store, NS(job=job_id, trunk=DEV_TRUNK))
+    engine.cmd_run(store, NS(job=None))
+
+    job = store.get_job(job_id)
+    assert job["status"] == "needs_mapping"        # never silently converts empty rates
+    assert "inter_rate" in job["notes"]
+    store.close()

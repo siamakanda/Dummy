@@ -24,8 +24,8 @@ TEMPLATE_COLUMNS = [
 BUILTIN_ALIASES: dict[str, list[str]] = {
     "prefix": ["prefix", "dialcode", "dial code", "code", "1npanxx", "npanxx", "dial_code"],
     "destination": ["destination", "name", "dest", "description"],
-    "inter_rate": ["inter rate", "interstate", "rate (inter)", "inter"],
-    "intra_rate": ["intra rate", "intrastate", "rate (intra)", "intra"],
+    "inter_rate": ["inter rate", "interstate rate", "interstate", "rate (inter)", "inter"],
+    "intra_rate": ["intra rate", "intrastate rate", "intrastate", "rate (intra)", "intra"],
     "indeterminate_rate": ["indeterminate rate", "indeterminate"],
     "connect_fee": ["connect fee", "connect"],
     "init_duration": ["init duration", "min dur", "min duration", "initial duration"],

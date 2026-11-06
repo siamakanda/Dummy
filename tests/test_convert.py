@@ -276,3 +276,19 @@ def test_explicit_none_defaults_fall_back():
 
     assert out.iloc[0]["init_duration"] == "12"      # not the string "None"
     assert out.iloc[0]["increment"] == "6"
+
+
+def test_rate_headers_with_rate_suffix():
+    frame = pd.DataFrame({
+        "1NPANXX": ["1201200"],
+        "Interstate Rate": ["0.00162"],
+        "Intrastate Rate": ["0.00162"],
+        "Effective Date": ["11/12/26"],
+    })
+
+    out = to_template(frame)
+
+    assert out.iloc[0]["inter_rate"] == "0.00162"
+    assert out.iloc[0]["intra_rate"] == "0.00162"
+    assert out.iloc[0]["indeterminate_rate"] == "0.00162"
+    assert out.iloc[0]["effective_date"] == "2026-11-12"

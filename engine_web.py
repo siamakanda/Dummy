@@ -251,6 +251,10 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             elif status == "validation_error":
                 jobs.flash("warning", "Deck needs attention",
                            "It didn't pass validation - open the status details before pushing.")
+            elif status == "needs_mapping":
+                jobs.flash("warning", "Unknown layout",
+                           "Some columns couldn't be mapped. Set the trunk's header aliases, "
+                           "then convert again.")
             else:
                 jobs.flash("info", "Nothing to convert", "Map this deck to a trunk first.")
 

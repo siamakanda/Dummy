@@ -33,7 +33,8 @@ def extract_zip(path, dest_dir) -> list[Path]:
     extracted = []
     with zipfile.ZipFile(path) as archive:
         for member in archive.namelist():
-            if member.endswith("/"):
+            if (member.endswith("/") or "__MACOSX" in member
+                    or Path(member).name.startswith("._")):      # skip macOS junk
                 continue
             target = dest_dir / safe_filename(member)
             with archive.open(member) as source:

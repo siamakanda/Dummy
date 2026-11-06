@@ -27,7 +27,7 @@ from pathlib import Path
 import config
 from cleaner import read_clean
 from input_sources import DirectorySource
-from mapper import to_template
+from mapper import missing_required_columns, to_template
 from store import Store
 from trunk_matcher import match_trunks
 from upload import build_deck_name, build_plan, commit_allowed, find_trunk
@@ -136,7 +136,14 @@ def convert_job(store: Store, job: dict, *, today: dt.date | None = None) -> dic
         return {"status": "failed", "error": f"missing file {path}"}
     log.info("Converting %s ...", path.name)
     config_for_trunk = store.get_config(int(job["trunk_id"])) or {}
-    frame = to_template(read_clean(path), config_for_trunk)
+    raw = read_clean(path)
+    missing = missing_required_columns(list(raw.columns), config_for_trunk.get("header_aliases"))
+    if missing:
+        log.warning("Unknown layout for %s: unmapped columns %s", path.name, missing)
+        store.update_job(job["job_id"], status="needs_mapping",
+                         notes=f"unmapped columns: {missing}")
+        return {"status": "needs_mapping", "missing": missing}
+    frame = to_template(raw, config_for_trunk)
     log.info("  %d rows - validating ...", len(frame))
     issues = validate(frame)
     errors = [str(issue) for issue in issues if issue.level == "error"]
