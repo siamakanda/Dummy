@@ -40,6 +40,12 @@
       background:var(--surface);border-radius:999px;padding:6px 12px;font-size:12.5px;color:var(--ink-2)}
     .live{width:8px;height:8px;border-radius:50%;background:var(--green);
       box-shadow:0 0 0 3px rgba(18,183,106,.18)}
+    .topright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .navlinks{display:flex;gap:2px}
+    .navlinks a{color:var(--ink-2);text-decoration:none;font-size:13px;font-weight:650;
+      padding:7px 11px;border-radius:9px;transition:.14s}
+    .navlinks a:hover{background:var(--slate-bg);color:var(--ink)}
+    .syncnote{color:var(--muted);font-size:11.5px}
 
     /* page */
     .page{max-width:1240px;margin:0 auto;padding:26px 26px 70px}
@@ -235,6 +241,15 @@
     </div>
   </div>
   <div class="topright">
+    <nav class="navlinks">
+      <a href="#files">Files</a>
+      <a href="#trunks">Trunks</a>
+      <a href="#history">History</a>
+    </nav>
+    <form class="inline" method="post" action="/sync">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button class="btn">Sync trunks</button>
+    </form>
     <span class="pill"><span class="live"></span>local &middot; 127.0.0.1:8090</span>
   </div>
 </header>
@@ -319,7 +334,7 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="files">
     <div class="panel-head">
       <h2>Files</h2>
       <span class="muted">{{ trunks | length }} trunks on the switch</span>
@@ -408,10 +423,10 @@
                               .get(job.status, job.status) %}
             <span class="badge st-{{ job.status }}"><span class="dot"></span>{{ st_label }}</span>
             {% if job.notes %}<div class="note" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
-            {% if job.deck_id %}
+            {% if job.deck_name %}
             <div class="meta">
-              <span class="tag">deck {{ job.deck_id }}</span>
-              {% if job.deck_name %}<span class="tag" title="created {{ job.deck_created_at or '' }}">{{ job.deck_name }}</span>{% endif %}
+              {% if job.deck_id %}<span class="tag">deck {{ job.deck_id }}</span>{% endif %}
+              <span class="tag" title="{% if job.deck_created_at %}created {{ job.deck_created_at }}{% else %}will be created{% endif %}">{{ job.deck_name }}</span>
             </div>
             {% endif %}
           </td>
@@ -531,6 +546,99 @@
     </div>
     {% endif %}
   </section>
+
+  <section class="panel" id="trunks">
+    <div class="panel-head">
+      <h2>Trunks</h2>
+      <span class="muted">{{ trunks | length }} on the switch &middot; last synced {{ last_synced or 'never' }}</span>
+    </div>
+    {% if trunks %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width:64px">#</th>
+          <th>Trunk</th>
+          <th style="width:220px">Carrier</th>
+          <th style="width:150px">Writes</th>
+          <th style="width:210px">Last deck</th>
+          <th style="width:110px">Assigned</th>
+          <th style="width:120px"></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in trunks %}
+        <tr>
+          <td class="num">{{ t.trunk_id }}</td>
+          <td><div class="file">{{ t.trunk_name }}</div></td>
+          <td class="muted">{{ t.carrier_name }}</td>
+          <td>
+            {% if approved.get(t.trunk_id) %}
+            <span class="badge st-assigned"><span class="dot"></span>approved</span>
+            {% elif t.trunk_name == 'BTCL TNT TRUNK' %}
+            <span class="badge st-dry_run"><span class="dot"></span>dev trunk</span>
+            {% else %}
+            <span class="badge st-unmapped"><span class="dot"></span>not approved</span>
+            {% endif %}
+          </td>
+          <td class="muted">
+            {% set d = last.get(t.trunk_id) %}
+            {% if d %}deck {{ d.deck_id or '?' }}{% if d.effective_date %} &middot; {{ d.effective_date }}{% endif %}{% else %}&mdash;{% endif %}
+          </td>
+          <td class="rows">{{ counts.get(t.trunk_id, {}).get('assigned', 0) }}</td>
+          <td>
+            {% if not approved.get(t.trunk_id) %}
+            <form class="inline" method="post" action="/trunks/approve/{{ t.trunk_id }}"
+                  data-confirm="Approve this trunk for future automatic writes?" data-trunk="{{ t.trunk_name }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn">Approve</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><h3>No trunks yet</h3><p>Click <strong>Sync trunks</strong> to read them from the switch.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="panel" id="history">
+    <div class="panel-head">
+      <h2>History</h2>
+      <span class="muted">newest {{ audit | length }} upload / assign / redo events</span>
+    </div>
+    {% if audit %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width:130px">Event</th>
+          <th style="width:70px">Job</th>
+          <th style="width:220px">Trunk</th>
+          <th>Deck</th>
+          <th style="width:260px">File</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for e in audit %}
+        <tr>
+          <td>
+            <span class="badge st-{{ {'upload': 'uploaded', 'assign': 'assigned', 'redo': 'validation_error'}.get(e.get('event'), 'mapped') }}">
+              <span class="dot"></span>{{ e.get('event') or 'event' }}
+            </span>
+          </td>
+          <td class="num">{{ e.get('job_id') or '' }}</td>
+          <td class="muted">{{ e.get('trunk') or e.get('trunk_id') or '' }}</td>
+          <td>{% if e.get('deck_id') %}<span class="tag">deck {{ e.get('deck_id') }}</span> {% endif %}<span class="muted">{{ e.get('deck_name') or '' }}</span></td>
+          <td class="muted">{{ e.get('file') or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><h3>No history yet</h3><p>Uploads, assigns and redos will appear here.</p></div>
+    {% endif %}
+  </section>
 </main>
 
 <div id="overlay" class="overlay" hidden>
@@ -558,7 +666,8 @@
     var q = document.getElementById('q');
     var st = document.getElementById('st');
     var count = document.getElementById('count');
-    var rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr'));
+    var rows = Array.prototype.slice.call(
+      document.querySelectorAll('#files tbody tr[data-status]'));
 
     function apply() {
       var text = (q && q.value || '').trim().toLowerCase();

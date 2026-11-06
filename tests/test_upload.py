@@ -75,6 +75,17 @@ def test_build_plan_requires_date(tmp_path):
         raise AssertionError("expected ValueError when no effective date")
 
 
+def test_build_plan_unknown_trunk_is_a_valueerror(tmp_path):
+    store = make_store(tmp_path)
+    deck = write_deck(tmp_path / "deck.csv", effective="2026-11-01")
+    try:
+        build_plan(store, "NO SUCH TRUNK", deck)
+    except ValueError as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for an unknown trunk")
+
+
 def test_load_effective_date(tmp_path):
     deck = write_deck(tmp_path / "deck.csv", effective="2026-11-02")
     assert load_effective_date(deck) == "2026-11-02"

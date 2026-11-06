@@ -9,8 +9,11 @@ overlay; when the job ends it reloads and shows the resulting success/info/warni
 """
 from __future__ import annotations
 
+import datetime as dt
 import hmac
+import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -40,6 +43,29 @@ FAVICON = (
 )
 
 
+def _read_audit(limit: int = 200) -> list[dict]:
+    """Newest-first audit records from data/audit.jsonl (read-only)."""
+    entries: list[dict] = []
+    try:
+        if config.AUDIT_LOG.exists():
+            lines = config.AUDIT_LOG.read_text(encoding="utf-8").splitlines()[-limit:]
+            for line in reversed(lines):
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return entries
+
+
+def _mtime_label(path: Path) -> str:
+    try:
+        return dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
+
+
 class _BufferHandler(logging.Handler):
     """Collects log lines from the running job into its console buffer."""
 
@@ -61,12 +87,13 @@ class _BufferHandler(logging.Handler):
 class _JobManager:
     """Tiny in-memory job + flash store for a single-user local dashboard."""
 
-    def __init__(self):
+    def __init__(self, timeout: float = 300.0):
         self._lock = threading.Lock()
         self._jobs: dict[int, dict] = {}
         self._counter = 0
         self._flashes: list[dict] = []
         self._write_lock = threading.Lock()          # one switch write at a time
+        self.timeout = timeout                       # seconds before a job is marked timed-out
 
     def start(self, kind: str, action, *, write: bool = False) -> int:
         with self._lock:
@@ -88,6 +115,11 @@ class _JobManager:
                 job["status"] = "done"
                 job["finished"] = time.time()
                 return
+            timer = None
+            if self.timeout and self.timeout > 0:
+                timer = threading.Timer(self.timeout, self._expire, args=(job,))
+                timer.daemon = True
+                timer.start()
             handler = _BufferHandler(job["lines"], self._lock)
             logger = logging.getLogger("dummy")
             logger.addHandler(handler)
@@ -96,7 +128,7 @@ class _JobManager:
             try:
                 action()
                 job["status"] = "done"
-            except Exception as exc:
+            except BaseException as exc:
                 log.exception("job %s failed", job_id)
                 with self._lock:
                     job["lines"].append(f"ERROR: {exc}")
@@ -104,6 +136,8 @@ class _JobManager:
                            "The action could not be completed. Please try again.")
                 job["status"] = "error"
             finally:
+                if timer:
+                    timer.cancel()
                 logger.removeHandler(handler)
                 job["finished"] = time.time()
                 if write:
@@ -111,6 +145,17 @@ class _JobManager:
 
         threading.Thread(target=run, daemon=True, name=f"dummy-job-{job_id}").start()
         return job_id
+
+    def _expire(self, job: dict) -> None:
+        with self._lock:
+            if job["status"] != "running":
+                return
+            job["lines"].append(f"ERROR: timed out after {self.timeout:.0f}s")
+            job["status"] = "error"
+            job["finished"] = time.time()
+        self.flash("warning", "Timed out",
+                   "The action took too long and was stopped in the dashboard. "
+                   "Check the switch before retrying.")
 
     def get(self, job_id: int) -> dict | None:
         with self._lock:
@@ -140,7 +185,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=secret_key, session_cookie="dummy_engine",
                        same_site="lax")
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    jobs = _JobManager()
+    jobs = _JobManager(timeout=float(os.getenv("DUMMY_JOB_TIMEOUT", "300")))
 
     # ---- session helpers -------------------------------------------------
     def csrf_token(request: Request) -> str:
@@ -178,10 +223,14 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 job["trunk_label"] = trunk["trunk_name"] if trunk else ""
                 job["can_write"] = bool(trunk) and commit_allowed(store, trunk)[0]
             trunks = store.all_trunks()
+            counts = store.trunk_job_counts()
+            approved = {t["trunk_id"]: store.is_approved(t["trunk_id"]) for t in trunks}
+            last = {t["trunk_id"]: store.last_deck(t["trunk_id"]) for t in trunks}
         finally:
             store.close()
         return render(request, "engine.html", jobs=all_jobs, trunks=trunks, stats=stats,
-                      flashes=flashes)
+                      flashes=flashes, counts=counts, approved=approved, last=last,
+                      audit=_read_audit(60), last_synced=_mtime_label(config.DATA_DIR / "trunks.csv"))
 
     @app.get("/jobs/{job_id}")
     async def job_status(job_id: int):
@@ -291,6 +340,44 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                            f"{scanned} file(s) scanned - nothing new to add.")
 
         return {"job": jobs.start("Scan inbox", work)}
+
+    @app.post("/sync")
+    async def sync_trunks(request: Request):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            from types import SimpleNamespace
+            store = Store.open(db_path)
+            try:
+                engine.cmd_sync(store, SimpleNamespace(headed=False))
+            finally:
+                store.close()
+            jobs.flash("success", "Trunks synced", "Trunk list refreshed from the switch.")
+
+        return {"job": jobs.start("Sync trunks", work, write=True)}
+
+    @app.post("/trunks/approve/{trunk_id}")
+    async def approve_trunk_by_id(request: Request, trunk_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                trunk = store.get_trunk(trunk_id)
+                if not trunk:
+                    jobs.flash("info", "No such trunk", "Refresh the trunk list and try again.")
+                    return
+                store.approve(trunk_id, by="dashboard", carrier_id=trunk.get("carrier_id"))
+                jobs.flash("success", "Trunk approved",
+                           f"{trunk['trunk_name']} may now receive uploaded decks.")
+            finally:
+                store.close()
+
+        return {"job": jobs.start("Approve trunk", work)}
 
     @app.post("/upload/{job_id}")
     async def upload_job_route(request: Request, job_id: int):

@@ -508,6 +508,74 @@ def test_engine_web_approve_trunk_unlocks_assign(tmp_path):
     assert "Assign to trunk" in client.get("/").text        # now allowed
 
 
+def test_engine_web_trunks_and_approve(tmp_path):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    db = tmp_path / "dummy.db"
+    store = make_store(tmp_path)
+    store.close()
+
+    client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
+    dash = client.get("/")
+    assert "Trunks" in dash.text and "History" in dash.text
+    assert "DW USA CONVO TRUNK 6060" in dash.text
+
+    response = client.post("/trunks/approve/82", data={"_csrf": _csrf(dash.text)})
+    _wait_job(client, response)
+
+    check = Store(db)
+    assert check.is_approved(82)
+    check.close()
+
+
+def test_engine_web_history_from_audit(tmp_path, monkeypatch):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    audit = tmp_path / "audit.jsonl"
+    audit.write_text('{"event": "upload", "job_id": 7, "deck_id": 190, '
+                     '"deck_name": "X 11_01_2026", "trunk": "BTCL TNT TRUNK"}\n',
+                     encoding="utf-8")
+    monkeypatch.setattr(config, "AUDIT_LOG", audit)
+    db = tmp_path / "dummy.db"
+    store = make_store(tmp_path)
+    store.close()
+
+    client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
+    page = client.get("/")
+
+    assert "X 11_01_2026" in page.text and "deck 190" in page.text
+
+
+def test_engine_web_previews_deck_name_before_upload(tmp_path, monkeypatch):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    store, job_id = _mapped_job(tmp_path, monkeypatch)        # dry_run, deck_name recorded
+    name = store.get_job(job_id)["deck_name"]
+    store.close()
+    assert name
+
+    client = TestClient(engine_web.create_app(db_path=tmp_path / "dummy.db", secret="test-secret"))
+    assert name in client.get("/").text                      # visible before Upload
+
+
+def test_job_manager_times_out():
+    import time
+    from engine_web import _JobManager
+
+    jobs = _JobManager(timeout=0.2)
+    job_id = jobs.start("slow", lambda: time.sleep(1), write=False)
+
+    for _ in range(150):
+        if jobs.get(job_id)["status"] != "running":
+            break
+        time.sleep(0.02)
+
+    assert jobs.get(job_id)["status"] == "error"
+
+
 def test_engine_web_run_one_converts_a_mapped_job(tmp_path, monkeypatch):
     import engine_web
     from fastapi.testclient import TestClient

@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M33 done · `pytest` → **195 passed** (offline)_
+_2026-11-04 · M1–M34 done · `pytest` → **200 passed** (offline)_
 
 ## TL;DR
 
@@ -475,3 +475,18 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - Dashboard **Fix with AI** button on `needs_mapping` rows; `POST /fix-ai/{job_id}` (no portal access).
 - Degrades silently when there is no LLM key / the call fails; the LLM can never invent a column.
 - Verified: **195 tests**.
+
+---
+
+## 34. Dashboard functional upgrade (done)
+
+- **Trunks section** — every trunk with carrier, write status (approved / dev / not approved), last deck
+  and assigned-deck count, plus a one-click **Approve**.
+- **Sync trunks** button in the header (writes `trunks.csv` + the store) with **last synced** time.
+- **History section** — the newest 60 `audit.jsonl` events (upload / assign / redo) with deck + trunk.
+- **Deck-name preview** — a `dry_run` row now shows the exact name it *will* create.
+- **Job timeout** — `_JobManager` marks a job `error` after `DUMMY_JOB_TIMEOUT` (default 300s) and the
+  runner catches `BaseException`, so a failed build can no longer leave the overlay spinning.
+- `build_plan` now raises `ValueError` (not `SystemExit`) for an unknown trunk, caught by the engine/CLI.
+- Filter scoped to the files table so the new sections don't interfere.
+- Verified: **200 tests**.

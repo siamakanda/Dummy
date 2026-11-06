@@ -56,6 +56,11 @@ summarises the result. Real writes happen only on **Upload** / **Assign** (or `-
   needed** with a date input and a filename hint; Upload stays blocked until you set it.
 - **Redo** — an uploaded (not yet assigned) deck can be deleted and the job reset (to fix a wrong name or
   date), then uploaded again. Assigned decks are never deleted.
+- **Trunks & History sections** — approve a trunk (with its status and last deck) and see recent
+  upload/assign/redo events, all on the same page; **Sync trunks** refreshes from the switch and shows
+  the last-synced time.
+- **Job timeout** — a stuck switch action is marked failed after `DUMMY_JOB_TIMEOUT` (default 300s)
+  instead of spinning forever.
 - **Live console overlay** — streams the engine’s log lines while a background job runs.
 - **Flash messages** — success / info / warning / error, with auto-dismiss.
 - Localhost only, **no login** (CSRF-protected), with a favicon.

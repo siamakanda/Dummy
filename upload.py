@@ -80,7 +80,7 @@ def build_plan(store: Store, trunk_name: str, csv_path, *, today: dt.date | None
                effective_date: str | None = None) -> Plan:
     trunk = find_trunk(store, trunk_name)
     if trunk is None:
-        raise SystemExit(f"trunk '{trunk_name}' not found in the store (run scrape_trunks.py / load_trunks first)")
+        raise ValueError(f"trunk '{trunk_name}' not found in the store (run scrape_trunks.py / load_trunks first)")
     frame = read_clean(csv_path)
     effective = effective_date
     if not effective and "effective_date" in frame.columns:

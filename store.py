@@ -343,6 +343,15 @@ class Store:
             (trunk_id,)).fetchone()
         return dict(row) if row else None
 
+    def trunk_job_counts(self) -> dict[int, dict[str, int]]:
+        """{trunk_id: {status: count}} from deck_jobs (for the Trunks view)."""
+        counts: dict[int, dict[str, int]] = {}
+        for row in self.conn.execute(
+                "SELECT trunk_id, status, COUNT(*) AS n FROM deck_jobs "
+                "WHERE trunk_id IS NOT NULL GROUP BY trunk_id, status"):
+            counts.setdefault(int(row["trunk_id"]), {})[row["status"]] = int(row["n"])
+        return counts
+
     def previous_deck_path(self, trunk_id: int, exclude_job_id: int | None = None) -> str | None:
         """Most recent converted deck for a trunk (from deck_jobs) - used for change warnings."""
         query = ("SELECT converted_path FROM deck_jobs WHERE trunk_id = ? "
