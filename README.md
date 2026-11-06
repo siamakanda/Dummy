@@ -45,6 +45,8 @@ summarises the result. Real writes happen only on **Upload** / **Assign** (or `-
 - **Filter bar** — live search (file / trunk / status) + a status dropdown with an “N of M” count.
 - **Table** — filename, effective date, suggested trunks, a grouped trunk dropdown, a colour status chip,
   and **per-row actions** (Convert · Upload · Assign · assigned).
+- **Approve trunk** — if the mapped trunk isn't approved yet, the row offers a one-click **Approve trunk**
+  button (same effect as `review.py approve-trunk`); Assign then unlocks.
 - **Live console overlay** — streams the engine’s log lines while a background job runs.
 - **Flash messages** — success / info / warning / error, with auto-dismiss.
 - Localhost only, **no login** (CSRF-protected), with a favicon.

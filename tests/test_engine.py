@@ -90,6 +90,22 @@ def test_assign_refuses_unapproved_trunk(tmp_path, monkeypatch):
     store.close()
 
 
+def test_assign_succeeds_after_approval(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
+    store.set_job_mapping(job_id, 82)
+    store.update_job(job_id, status="uploaded")
+    portal = FakePortal()
+    assert engine.assign_jobs(store, portal, commit=True, job_id=job_id)[0]["status"] == "refused"
+
+    store.approve(82, by="test")
+    results = engine.assign_jobs(store, portal, commit=True, job_id=job_id)
+
+    assert results[0]["status"] == "assigned"
+    assert store.get_job(job_id)["status"] == "assigned"
+    store.close()
+
+
 def _csrf(html: str) -> str:
     return re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
 
@@ -235,6 +251,31 @@ def test_engine_web_assign_refuses_unapproved_trunk(tmp_path):
     check = Store(db)
     assert check.get_job(job_id)["status"] == "uploaded"     # refused: still uploaded, not assigned
     check.close()
+
+
+def test_engine_web_approve_trunk_unlocks_assign(tmp_path):
+    import engine_web
+    from fastapi.testclient import TestClient
+
+    db = tmp_path / "dummy.db"
+    store = make_store(tmp_path)
+    job_id = store.add_job("file:a", file_path="a.csv", file_name="a.csv")
+    store.set_job_mapping(job_id, 82)
+    store.update_job(job_id, status="uploaded", deck_id=999)
+    store.close()
+
+    client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
+    dash = client.get("/")
+    assert "Approve trunk" in dash.text                     # not approved yet
+
+    response = client.post(f"/approve/{job_id}", data={"_csrf": _csrf(dash.text)})
+    _wait_job(client, response)
+
+    check = Store(db)
+    assert check.is_approved(82)
+    check.close()
+
+    assert "Assign to trunk" in client.get("/").text        # now allowed
 
 
 def test_engine_web_run_one_converts_a_mapped_job(tmp_path, monkeypatch):

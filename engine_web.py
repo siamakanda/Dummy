@@ -165,6 +165,7 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 stats[job["status"]] = stats.get(job["status"], 0) + 1
                 trunk = store.get_trunk(job["trunk_id"]) if job["trunk_id"] else None
                 job["trunk_label"] = trunk["trunk_name"] if trunk else ""
+                job["can_write"] = bool(trunk) and commit_allowed(store, trunk)[0]
             trunks = store.all_trunks()
         finally:
             store.close()
@@ -351,6 +352,29 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 store.close()
 
         return {"job": jobs.start("Assign to trunk", work)}
+
+    @app.post("/approve/{job_id}")
+    async def approve_trunk_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                job = store.get_job(job_id)
+                trunk = store.get_trunk(int(job["trunk_id"])) if job and job.get("trunk_id") else None
+                if not trunk:
+                    jobs.flash("info", "Nothing to approve", "Map the deck to a trunk first.")
+                    return
+                store.approve(int(trunk["trunk_id"]), by="dashboard",
+                              carrier_id=trunk.get("carrier_id"))
+                jobs.flash("success", "Trunk approved",
+                           f"{trunk['trunk_name']} may now receive uploaded decks. Assign when ready.")
+            finally:
+                store.close()
+
+        return {"job": jobs.start("Approve trunk", work)}
 
     @app.get("/healthz")
     async def healthz():

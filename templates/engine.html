@@ -410,21 +410,42 @@
               <button class="btn">Convert</button>
             </form>
             {% elif job.status == 'dry_run' %}
-            <form class="inline" method="post" action="/upload/{{ job.job_id }}">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="btn primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                Upload to deck
-              </button>
-            </form>
+            <div class="actions">
+              <form class="inline" method="post" action="/upload/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn primary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  Upload to deck
+                </button>
+              </form>
+              {% if job.trunk_id and not job.can_write %}
+              <form class="inline" method="post" action="/approve/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn">Approve trunk</button>
+              </form>
+              {% endif %}
+            </div>
             {% elif job.status == 'uploaded' %}
-            <form class="inline" method="post" action="/assign/{{ job.job_id }}">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="btn primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
-                Assign to trunk
-              </button>
-            </form>
+            <div class="actions">
+              {% if job.can_write %}
+              <form class="inline" method="post" action="/assign/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn primary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+                  Assign to trunk
+                </button>
+              </form>
+              {% else %}
+              <form class="inline" method="post" action="/approve/{{ job.job_id }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn primary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+                  Approve trunk
+                </button>
+              </form>
+              <span class="sub">approve, then assign</span>
+              {% endif %}
+            </div>
             {% elif job.status == 'assigned' %}
             <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>assigned</span>
             {% else %}<span class="muted">&mdash;</span>{% endif %}
