@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M28 done · `pytest` → **172 passed** (offline)_
+_2026-11-04 · M1–M29 done · `pytest` → **175 passed** (offline)_
 
 ## TL;DR
 
@@ -394,3 +394,18 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - Removed an unused import (`scrape_trunks.py: json`); archived the stale `final_review.html` into
   `archive/`; cleared `__pycache__` / `.pytest_cache`. `python -m compileall` is clean.
 - Verified: **172 tests**.
+
+---
+
+## 29. Two-step upload/assign + dashboard-only launcher (done)
+
+- **Launcher** (`start.bat` → `launcher.py`) now just starts the dashboard — no terminal menu; every
+  option lives in the browser.
+- **Split the write into two explicit steps**: **Upload** (create the deck + upload the CSV — not assigned)
+  and **Assign** (wire the uploaded deck to the trunk + verify). `deck_jobs` gained `deck_id`/`deck_name`;
+  the status chain is now `… → dry_run → uploaded → assigned` (legacy `uploaded` rows migrated to
+  `assigned` on first open).
+- Dashboard: 7 stat cards incl. **Uploaded** and **Assigned**, an updated status filter, per-row
+  **Upload to deck** / **Assign to trunk** buttons, and a `locked` mapping once uploaded.
+- CLI: `engine.py upload` (step 1) and `engine.py assign` (step 2); a failed upload deletes its orphan.
+- Verified: **175 tests**.

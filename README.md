@@ -2,15 +2,15 @@
 
 Dummy automates the recurring chore of **"update the rate deck"** for a VoIP carrier. A carrier sends
 a rate deck (CSV / XLSX / ZIP); we map it to a trunk on the switch, convert it to our fixed template,
-validate it, and push it to the portal — with **"Use LRN for billing"** ticked — safely (dry-run by
-default, allowed trunks only).
+validate it, **upload** it as a rate deck (with **"Use LRN for billing"** ticked), then **assign** that
+deck to the trunk — safely (dry-run by default, allowed trunks only).
 
 The primary, day-to-day experience is the **folder-first engine + local dashboard** (Windows): drop
-decks in a folder, map each file to a trunk, convert, and push. The original **email pipeline** is still
-included for unattended intake (see [Email pipeline](#email-pipeline-included)).
+decks in a folder, map each file to a trunk, convert, upload the deck, then assign it. The original
+**email pipeline** is still included for unattended intake (see [Email pipeline](#email-pipeline-included)).
 
-> The portal is live billing infrastructure. Nothing is written unless you press **Push** / pass
-> `--commit`, and only for the development trunk or a trunk a human approved.
+> The portal is live billing infrastructure. Nothing is written unless you **Upload** / **Assign**
+> (or pass `--commit`), and only for the development trunk or a trunk a human approved.
 
 ## Quick start (Windows)
 
@@ -22,11 +22,10 @@ included for unattended intake (see [Email pipeline](#email-pipeline-included)).
    playwright install chromium
    copy .env.example .env        :: fill in PORTAL_USERNAME / PORTAL_PASSWORD
    ```
-2. **Double-click `start.bat`.** A small terminal menu appears; choose **1) Start dashboard** (or press
-   Enter). Your browser opens the dashboard at <http://127.0.0.1:8090>. Keep the window open; Ctrl+C stops it.
+2. **Double-click `start.bat`.** It opens the dashboard in your browser at <http://127.0.0.1:8090> and
+   keeps the engine running in that terminal window. Keep it open; Ctrl+C stops it.
 
-The menu also offers refresh-trunks / scan-inbox / convert / status. Power users can run one directly:
-`python launcher.py status|sync|scan|convert`.
+Every option lives in the dashboard — the terminal is just the engine's console.
 
 ## The daily workflow
 
@@ -34,17 +33,18 @@ The menu also offers refresh-trunks / scan-inbox / convert / status. Power users
 2. **Scan inbox/** — Dummy reads each file and lists it as a job with *suggested* trunks.
 3. **Map** each file to the right trunk (pick from the full trunk list; click a suggestion to pre-select).
 4. **Convert** — turns the carrier layout into our template and validates it (row count, prefixes, rates).
-5. **Dry-run**, review, then **Push** — create the deck, upload the rates, assign it to the trunk, verify.
+5. **Upload to deck** — creates the rate deck on the switch and uploads the rates (not assigned yet).
+6. **Assign to trunk** — wires that uploaded deck to the trunk and verifies it.
 
 Every action reports back: a live console overlay streams what Dummy is doing, and a colour-coded banner
-summarises the result. A real write happens only on **Push** (or `--commit`) for an allowed trunk.
+summarises the result. Real writes happen only on **Upload** / **Assign** (or `--commit`) for an allowed trunk.
 
 ## Dashboard
 
-- **Six stat cards** — deck files · unmapped · mapped · ready to push · uploaded · problems.
+- **Stat cards** — deck files · unmapped · mapped · ready to upload · uploaded · assigned · problems.
 - **Filter bar** — live search (file / trunk / status) + a status dropdown with an “N of M” count.
 - **Table** — filename, effective date, suggested trunks, a grouped trunk dropdown, a colour status chip,
-  and **per-row actions** (Convert · Dry-run · Push · done).
+  and **per-row actions** (Convert · Upload · Assign · assigned).
 - **Live console overlay** — streams the engine’s log lines while a background job runs.
 - **Flash messages** — success / info / warning / error, with auto-dismiss.
 - Localhost only, **no login** (CSRF-protected), with a favicon.
@@ -62,10 +62,12 @@ python engine.py scan                 :: scan inbox/ -> one job per deck (with s
 python engine.py list --trunks        :: jobs + the switch trunks
 python engine.py map 1 "BTCL TNT TRUNK"
 python engine.py run                  :: convert + validate mapped jobs (dry run)
-python engine.py push                 :: dry-run the upload; add --commit to write
+python engine.py upload               :: step 1: create the deck + upload the CSV (add --commit)
+python engine.py assign               :: step 2: assign an uploaded deck to its trunk (add --commit)
 ```
 
-`push` does **create → upload → assign → verify** and deletes the orphan deck if any step fails.
+`upload` creates the deck and uploads the rates; `assign` wires the deck to the trunk and verifies it.
+Each is dry-run unless `--commit`; a failed upload deletes its orphan deck.
 
 ## Configuration (`.env`)
 
@@ -85,11 +87,11 @@ Secrets live only in `.env` (git-ignored). `.env.example` is the committed templ
 
 ## Safety model
 
-- **Dry-run by default** — writes require `--commit` (CLI) or **Push** (dashboard).
+- **Dry-run by default** — writes require **Upload** / **Assign** (dashboard) or `--commit` (CLI).
 - **Allowed trunks only** — the development trunk `BTCL TNT TRUNK`, or a trunk a human approved.
 - **Never guess** — an ambiguous trunk goes to a human, not a guess. Declared **trunk aliases** resolve
   known naming variants deterministically.
-- **No orphans** — a failed create/upload/assign deletes the half-made deck.
+- **No orphans from uploading** — a failed upload deletes its half-created deck; an uploaded-but-never-assigned deck is swept by `cleanup.py --orphans`.
 - **Audit trail** — `data/dummy.db`, `data/audit.jsonl`, archived originals under `data/archive/`.
 
 ## Repository layout

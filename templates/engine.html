@@ -87,7 +87,7 @@
     .flash-error .ficon{color:var(--red)}
 
     /* stats */
-    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px;margin-bottom:20px}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
     .stat{display:flex;align-items:center;gap:13px;background:var(--surface);border:1px solid var(--line);
       border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-sm);transition:.16s ease}
     .stat:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
@@ -98,6 +98,7 @@
     .i-indigo{background:#eef2ff;color:#4f46e5}.i-amber{background:var(--amber-bg);color:var(--amber)}
     .i-blue{background:var(--blue-bg);color:var(--blue)}.i-violet{background:var(--violet-bg);color:var(--violet)}
     .i-green{background:var(--green-bg);color:#067647}.i-red{background:var(--red-bg);color:var(--red)}
+    .i-sky{background:#e0f2fe;color:#0369a1}
 
     /* panel / table */
     .panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;
@@ -154,7 +155,9 @@
     .st-unmapped{background:var(--amber-bg);color:var(--amber)}
     .st-mapped{background:var(--blue-bg);color:var(--blue)}
     .st-dry_run{background:var(--violet-bg);color:var(--violet)}
-    .st-uploaded{background:var(--green-bg);color:#067647}
+    .st-uploaded{background:#e0f2fe;color:#0369a1}
+    .st-assigned{background:var(--green-bg);color:#067647}
+    .st-needs_mapping{background:#fef0c7;color:#93370d}
     .st-failed,.st-validation_error{background:var(--red-bg);color:var(--red)}
     .st-skipped{background:var(--slate-bg);color:var(--slate)}
     .note{color:var(--faint);font-size:11.5px;margin-top:5px;max-width:210px;
@@ -237,7 +240,7 @@
   <section class="headline">
     <div>
       <h1>Deck inbox</h1>
-      <p>Drop rate decks in <code>inbox/</code>, map each file to a trunk, convert to our template, then push to the switch.</p>
+      <p>Drop rate decks in <code>inbox/</code>, map each to a trunk, convert, then <strong>upload</strong> the deck and <strong>assign</strong> it to the trunk.</p>
     </div>
     <div class="headline-actions">
       <form class="inline" method="post" action="/scan">
@@ -297,15 +300,19 @@
     </div>
     <div class="stat">
       <span class="ico i-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg></span>
-      <div><div class="n">{{ stats.get('dry_run', 0) }}</div><div class="l">Ready to push</div></div>
+      <div><div class="n">{{ stats.get('dry_run', 0) }}</div><div class="l">Ready to upload</div></div>
     </div>
     <div class="stat">
-      <span class="ico i-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+      <span class="ico i-sky"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
       <div><div class="n">{{ stats.get('uploaded', 0) }}</div><div class="l">Uploaded</div></div>
     </div>
     <div class="stat">
+      <span class="ico i-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg></span>
+      <div><div class="n">{{ stats.get('assigned', 0) }}</div><div class="l">Assigned</div></div>
+    </div>
+    <div class="stat">
       <span class="ico i-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
-      <div><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) }}</div><div class="l">Problems</div></div>
+      <div><div class="n">{{ stats.get('failed', 0) + stats.get('validation_error', 0) + stats.get('needs_mapping', 0) }}</div><div class="l">Problems</div></div>
     </div>
   </section>
 
@@ -323,8 +330,11 @@
         <option value="">All statuses</option>
         <option value="unmapped">Unmapped</option>
         <option value="mapped">Mapped</option>
-        <option value="dry_run">Ready to push</option>
-        <option value="uploaded">Uploaded</option>
+        <option value="dry_run">Ready to upload</option>
+        <option value="uploaded">Uploaded (unassigned)</option>
+        <option value="assigned">Assigned</option>
+        <option value="needs_mapping">Mapping needed</option>
+        <option value="validation_error">Validation error</option>
         <option value="failed">Failed</option>
       </select>
       <span class="count" id="count"></span>
@@ -382,11 +392,14 @@
                 </optgroup>
                 {% endfor %}
               </select>
-              <div class="save">{% if job.status == 'uploaded' %}<span class="muted">assigned</span>{% else %}<button class="btn">Save mapping</button>{% endif %}</div>
+              <div class="save">{% if job.status in ('uploaded', 'assigned') %}<span class="muted">locked</span>{% else %}<button class="btn">Save mapping</button>{% endif %}</div>
             </form>
           </td>
           <td data-l="Status">
-            <span class="badge st-{{ job.status }}"><span class="dot"></span>{{ job.status.replace('_', ' ') }}</span>
+            {% set st_label = {'dry_run': 'ready to upload', 'uploaded': 'uploaded (unassigned)',
+                               'needs_mapping': 'mapping needed', 'validation_error': 'validation error'}
+                              .get(job.status, job.status) %}
+            <span class="badge st-{{ job.status }}"><span class="dot"></span>{{ st_label }}</span>
             {% if job.notes %}<div class="note" title="{{ job.notes }}">{{ job.notes }}</div>{% endif %}
           </td>
           <td data-l="Rows" class="rows">{{ job.rows if job.rows else '&mdash;' | safe }}</td>
@@ -397,22 +410,23 @@
               <button class="btn">Convert</button>
             </form>
             {% elif job.status == 'dry_run' %}
-            <div class="actions">
-              <form class="inline" method="post" action="/push/{{ job.job_id }}">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="btn">Dry-run</button>
-              </form>
-              <form class="inline" method="post" action="/push/{{ job.job_id }}">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <input type="hidden" name="commit" value="1">
-                <button class="btn primary">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                  Push
-                </button>
-              </form>
-            </div>
+            <form class="inline" method="post" action="/upload/{{ job.job_id }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                Upload to deck
+              </button>
+            </form>
             {% elif job.status == 'uploaded' %}
-            <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>done</span>
+            <form class="inline" method="post" action="/assign/{{ job.job_id }}">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+                Assign to trunk
+              </button>
+            </form>
+            {% elif job.status == 'assigned' %}
+            <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>assigned</span>
             {% else %}<span class="muted">&mdash;</span>{% endif %}
           </td>
         </tr>

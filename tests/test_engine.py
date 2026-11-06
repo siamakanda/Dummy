@@ -60,17 +60,17 @@ def test_scan_map_run_push_dry(tmp_path, monkeypatch):
     assert job["rows"] > 0
     assert pathlib.Path(job["converted_path"]).exists()
 
-    engine.cmd_push(store, NS(job=None, commit=False, headed=False))     # dry-run: no write
+    engine.cmd_upload(store, NS(job=None, commit=False, headed=False))   # dry-run: no write
     assert store.get_job(job_id)["status"] == "dry_run"
 
 
-def test_push_refuses_unapproved_trunk(tmp_path):
+def test_upload_refuses_unapproved_trunk(tmp_path):
     store = make_store(tmp_path)
     job_id = store.add_job("file:z", file_path="z.csv", file_name="z.csv")
     store.set_job_mapping(job_id, 82)                        # DW USA CONVO TRUNK 6060 - not dev/approved
     store.update_job(job_id, status="dry_run")
 
-    results = engine.push_jobs(store, object(), commit=True)  # portal unused: refused first
+    results = engine.upload_jobs(store, object(), commit=True)  # portal unused: refused first
 
     assert results[0]["status"] == "refused"
     assert store.get_job(job_id)["status"] == "dry_run"
@@ -128,28 +128,53 @@ def _mapped_job(tmp_path, monkeypatch):
     return store, job_id
 
 
-def test_commit_job_creates_uploads_and_assigns(tmp_path, monkeypatch):
+def test_upload_job_creates_and_uploads_only(tmp_path, monkeypatch):
     store, job_id = _mapped_job(tmp_path, monkeypatch)
     portal = FakePortal()
 
-    results = engine.push_jobs(store, portal, commit=True, job_id=job_id)
+    results = engine.upload_jobs(store, portal, commit=True, job_id=job_id)
 
     assert results[0]["status"] == "uploaded"
-    assert portal.created and portal.uploaded and portal.assigned      # create + upload + assign
-    assert portal.assigned[0][2] == 999                                # the new deck id
-    assert portal.deleted == []
-    assert store.get_job(job_id)["status"] == "uploaded"
+    assert portal.created and portal.uploaded
+    assert portal.assigned == []                       # step 1 must NOT assign
+    job = store.get_job(job_id)
+    assert job["status"] == "uploaded" and job["deck_id"] == 999
+    store.close()
 
 
-def test_commit_job_cleans_up_orphan_on_assign_failure(tmp_path, monkeypatch):
+def test_upload_failure_removes_orphan(tmp_path, monkeypatch):
     store, job_id = _mapped_job(tmp_path, monkeypatch)
-    portal = FakePortal(assign_ok=False)
+    portal = FakePortal(upload_ok=False)
 
-    results = engine.push_jobs(store, portal, commit=True, job_id=job_id)
+    results = engine.upload_jobs(store, portal, commit=True, job_id=job_id)
 
     assert results[0]["status"] == "failed"
-    assert portal.deleted == [999]                                     # orphan removed
+    assert portal.deleted == [999]                     # created deck removed
     assert store.get_job(job_id)["status"] == "failed"
+    store.close()
+
+
+def test_assign_job_wires_the_uploaded_deck(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)   # step 1
+    portal = FakePortal()
+
+    results = engine.assign_jobs(store, portal, commit=True, job_id=job_id)  # step 2
+
+    assert results[0]["status"] == "assigned"
+    assert portal.assigned[0][2] == 999                # the recorded deck id
+    assert store.get_job(job_id)["status"] == "assigned"
+    store.close()
+
+
+def test_assign_without_upload_fails(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)     # dry_run, no deck_id
+
+    results = engine.assign_jobs(store, FakePortal(), commit=True, job_id=job_id)
+
+    assert results[0]["status"] == "failed"
+    assert "upload" in results[0]["error"].lower()
+    store.close()
 
 
 def test_engine_web_dashboard_and_map(tmp_path):
@@ -174,8 +199,8 @@ def test_engine_web_dashboard_and_map(tmp_path):
     check.close()
 
 
-def test_engine_web_push_commit_refuses_unapproved_trunk(tmp_path):
-    """The dashboard push must not launch a browser for a trunk it is going to refuse."""
+def test_engine_web_upload_refuses_unapproved_trunk(tmp_path):
+    """Upload must not launch a browser for a trunk it will refuse."""
     import engine_web
     from fastapi.testclient import TestClient
 
@@ -190,7 +215,7 @@ def test_engine_web_push_commit_refuses_unapproved_trunk(tmp_path):
     dash = client.get("/")
     assert "r.csv" in dash.text
 
-    response = client.post(f"/push/{job_id}", data={"_csrf": _csrf(dash.text), "commit": "1"})
+    response = client.post(f"/upload/{job_id}", data={"_csrf": _csrf(dash.text)})
     _wait_job(client, response)
 
     check = Store(db)

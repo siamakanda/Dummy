@@ -9,7 +9,6 @@ overlay; when the job ends it reloads and shows the resulting success/info/warni
 """
 from __future__ import annotations
 
-import contextlib
 import hmac
 import logging
 import secrets
@@ -281,12 +280,11 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
 
         return {"job": jobs.start("Scan inbox", work)}
 
-    @app.post("/push/{job_id}")
-    async def push_job(request: Request, job_id: int):
+    @app.post("/upload/{job_id}")
+    async def upload_job_route(request: Request, job_id: int):
         form = await request.form()
         if not csrf_ok(request, form):
             return PlainTextResponse("bad csrf", status_code=403)
-        commit = str(form.get("commit")) == "1"
 
         def work():
             # Own the SQLite connection inside this worker thread: Playwright's sync API needs a
@@ -295,38 +293,66 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
             try:
                 job = store.get_job(job_id)
                 if not job or not job["trunk_id"]:
-                    jobs.flash("info", "Nothing to push",
-                               "Convert a mapped deck before pushing.")
+                    jobs.flash("info", "Nothing to upload", "Convert a mapped deck first.")
                     return
                 allowed, _ = commit_allowed(store, store.get_trunk(int(job["trunk_id"])))
-                portal_ctx = contextlib.nullcontext(None)
-                if commit and allowed:                   # only open a browser when we will write
-                    from portal import Portal
-                    portal_ctx = Portal(headless=True)
-                with portal_ctx as portal:
-                    results = engine.push_jobs(store, portal, commit=commit, job_id=job_id)
+                if not allowed:
+                    jobs.flash("warning", "Upload blocked",
+                               "This trunk isn't approved for automatic writes.")
+                    return
+                from portal import Portal
+                with Portal(headless=True) as portal:
+                    results = engine.upload_jobs(store, portal, commit=True, job_id=job_id)
                 item = (results or [{}])[0]
                 status = item.get("status")
                 if status == "uploaded":
-                    jobs.flash("success", "Deck pushed",
-                               f"{item.get('deck_name', 'The deck')} was created, uploaded and "
-                               "assigned to the trunk.")
-                elif status == "dry_run":
-                    jobs.flash("info", "Dry run complete",
-                               "Nothing was written to the switch. Push when you're ready.")
+                    jobs.flash("success", "Deck uploaded",
+                               f"{item.get('deck_name', 'The deck')} was created and its rates uploaded "
+                               f"(deck {item.get('deck_id')}). Assign it to the trunk next.")
                 elif status == "refused":
-                    jobs.flash("warning", "Push blocked",
-                               item.get("reason") or "This trunk isn't approved for automatic writes.")
-                elif status == "failed":
-                    jobs.flash("error", "Push failed",
-                               item.get("error") or "The deck could not be pushed to the switch.")
+                    jobs.flash("warning", "Upload blocked",
+                               item.get("reason") or "This trunk isn't approved.")
                 else:
-                    jobs.flash("info", "Nothing to push", "Convert a mapped deck before pushing.")
+                    jobs.flash("error", "Upload failed",
+                               item.get("error") or "The deck could not be uploaded.")
             finally:
                 store.close()
 
-        label = "Push to switch" if commit else "Dry run"
-        return {"job": jobs.start(label, work)}
+        return {"job": jobs.start("Upload to deck", work)}
+
+    @app.post("/assign/{job_id}")
+    async def assign_job_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                job = store.get_job(job_id)
+                if not job or not job.get("deck_id"):
+                    jobs.flash("info", "Nothing to assign",
+                               "Upload the deck to the switch first.")
+                    return
+                allowed, _ = commit_allowed(store, store.get_trunk(int(job["trunk_id"])))
+                if not allowed:
+                    jobs.flash("warning", "Assign blocked",
+                               "This trunk isn't approved for automatic writes.")
+                    return
+                from portal import Portal
+                with Portal(headless=True) as portal:
+                    results = engine.assign_jobs(store, portal, commit=True, job_id=job_id)
+                item = (results or [{}])[0]
+                if item.get("status") == "assigned":
+                    jobs.flash("success", "Deck assigned",
+                               f"{item.get('deck_name', 'The deck')} is now the rate deck on the trunk.")
+                else:
+                    jobs.flash("error", "Assign failed",
+                               item.get("error") or "The deck could not be assigned. It is still uploaded.")
+            finally:
+                store.close()
+
+        return {"job": jobs.start("Assign to trunk", work)}
 
     @app.get("/healthz")
     async def healthz():

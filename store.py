@@ -108,14 +108,20 @@ CREATE TABLE IF NOT EXISTS deck_jobs (
     file_name      TEXT,
     candidates     TEXT DEFAULT '[]',
     trunk_id       INTEGER,
-    status         TEXT DEFAULT 'unmapped',   -- unmapped | mapped | dry_run | uploaded | failed | skipped
+    status         TEXT DEFAULT 'unmapped',   -- unmapped | mapped | dry_run | uploaded | assigned | ...
     effective_date TEXT,
     converted_path TEXT,
+    deck_id        INTEGER,
+    deck_name      TEXT,
     rows           INTEGER DEFAULT 0,
     changes        INTEGER DEFAULT 0,
     notes          TEXT,
     created_at     TEXT,
     updated_at     TEXT
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
 );
 """
 
@@ -133,11 +139,17 @@ class Store:
         for statement in (                     # migrate older DBs
             "ALTER TABLE deck_history ADD COLUMN deck_id INTEGER",
             "ALTER TABLE trunk_config ADD COLUMN name_aliases TEXT DEFAULT '[]'",
+            "ALTER TABLE deck_jobs ADD COLUMN deck_id INTEGER",
+            "ALTER TABLE deck_jobs ADD COLUMN deck_name TEXT",
         ):
             try:
                 self.conn.execute(statement)
             except sqlite3.OperationalError:
                 pass
+        # one-time: "uploaded" used to mean uploaded AND assigned; the split makes it uploaded-only.
+        if self.conn.execute("SELECT value FROM meta WHERE key = 'deck_status_split'").fetchone() is None:
+            self.conn.execute("UPDATE deck_jobs SET status = 'assigned' WHERE status = 'uploaded'")
+            self.conn.execute("INSERT INTO meta(key, value) VALUES('deck_status_split', '1')")
         self.conn.commit()
 
     def close(self) -> None:

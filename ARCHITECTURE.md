@@ -565,16 +565,16 @@ A narrower UX over the **same** engine: no email/IMAP, no daemon. Implemented as
 `engine_web.py` (localhost dashboard) with a `deck_jobs` table.
 
 ```
-sync -> scan -> map (local web dashboard) -> convert -> dry-run -> approve -> push
+sync -> scan -> map -> convert (review) -> upload (create deck + CSV) -> assign (trunk)
 ```
 
-- `engine.py` — CLI: `sync` (trunks → SQLite), `scan` (`inbox/` → jobs), `run` (convert → dry-run),
-  `push` (**create → upload → assign → verify**, orphan cleanup on failure).
+- `engine.py` — CLI: `sync` (trunks → SQLite), `scan` (`inbox/` → jobs), `map`, `run` (convert → dry-run),
+  `upload` (**step 1: create the deck + upload the CSV**), `assign` (**step 2: wire the deck to the trunk**).
+  A failed upload deletes its orphan deck.
 - `engine_web.py` — local dashboard on `127.0.0.1` (**no login**; CSRF kept) for the human file→trunk
-  mapping and approval; action failures show as an on-page banner.
+  mapping, convert, upload and assign; action failures show as an on-page banner.
 - `inbox/` — the drop folder; jobs live in the `deck_jobs` table.
-- `launcher.py` + `start.bat` — double-click launcher: a small terminal menu, then starts the dashboard and
-  opens the browser; day-to-day work stays in the browser.
+- `launcher.py` + `start.bat` — double-click launcher: opens the dashboard (no terminal menu).
 - Reuses `scrape_trunks`, `input_sources.DirectorySource`, `trunk_matcher`, `cleaner` / `mapper` /
   `validator`, `upload.execute`, `store`, `notify`.
 

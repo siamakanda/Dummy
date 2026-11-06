@@ -10,7 +10,8 @@ pushes the deck to the portal.
     python engine.py list --trunks        # show jobs + the switch trunks
     python engine.py map 3 "BTCL TNT TRUNK"
     python engine.py run                  # convert + validate mapped jobs (dry run)
-    python engine.py push                 # dry-run the upload (add --commit to write; dev trunk only)
+    python engine.py upload               # step 1: create the deck + upload the CSV (--commit to write)
+    python engine.py assign               # step 2: assign an uploaded deck to its trunk (--commit)
 
 Everything reuses the existing modules (AGENTS.md sections 2-6); no portal write happens without
 ``--commit``.
@@ -174,58 +175,88 @@ def run_mapped(store: Store, job_id: int | None = None) -> list[dict]:
     return results
 
 
-def commit_job(store: Store, portal, job: dict) -> dict:
-    """create -> upload -> assign -> verify for one job, with orphan cleanup on any failure."""
+def upload_job(store: Store, portal, job: dict) -> dict:
+    """Step 1: create the deck and upload the rates. Does NOT assign it to the trunk."""
     trunk = store.get_trunk(int(job["trunk_id"]))
     allowed, reason = commit_allowed(store, trunk)
     if not allowed:
         return {"job_id": job["job_id"], "status": "refused", "reason": reason}
     plan = build_plan(store, trunk["trunk_name"], job["converted_path"])
     deck_id = None
-    created = False
     try:
         log.info("Creating deck '%s' ...", plan.deck_name)
         deck_id = portal.create_rate_deck(plan.deck_name, description=trunk["trunk_name"],
                                           lrn_billing=True)
-        created = True
         log.info("Uploading %s row(s) ...", plan.rows)
         upload = portal.upload_rate_deck(deck_id, plan.csv_path,
                                          effective_date=plan.effective_date or None, replace=True)
         if not upload.get("ok"):
             raise RuntimeError("upload reported not ok")
-        log.info("Assigning deck %s to %s ...", deck_id, trunk["trunk_name"])
-        assigned = portal.assign_deck_to_trunk(trunk["carrier_id"], trunk["trunk_id"], deck_id,
-                                               expect_name=plan.deck_name)
-        if not assigned.get("ok"):
-            raise RuntimeError("assign to trunk failed")
-        log.info("Verified: deck %s is assigned to %s", deck_id, trunk["trunk_name"])
     except Exception as exc:
-        log.error("Push failed: %s", exc)
-        if created and deck_id is not None:                 # never leave an orphan behind
+        log.error("Upload failed: %s", exc)
+        if deck_id is not None:                       # created but upload failed -> remove the orphan
             try:
                 portal.delete_rate_deck(deck_id)
             except Exception:
                 pass
         store.update_job(job["job_id"], status="failed", notes=str(exc))
         return {"job_id": job["job_id"], "status": "failed", "error": str(exc)}
-    store.update_job(job["job_id"], status="uploaded",
-                     notes=f"deck {deck_id} uploaded and assigned to {trunk['trunk_name']}")
+    store.update_job(job["job_id"], status="uploaded", deck_id=deck_id, deck_name=plan.deck_name,
+                     notes=f"deck {deck_id} uploaded - not yet assigned")
     return {"job_id": job["job_id"], "status": "uploaded", "deck_id": deck_id,
             "deck_name": plan.deck_name}
 
 
-def push_jobs(store: Store, portal, *, commit: bool, job_id: int | None = None) -> list[dict]:
-    """Push dry_run job(s); writes only when ``commit`` is set and the trunk is allowed."""
+def assign_job(store: Store, portal, job: dict) -> dict:
+    """Step 2: assign the already-uploaded deck to its trunk and verify."""
+    trunk = store.get_trunk(int(job["trunk_id"]))
+    deck_id = job.get("deck_id")
+    if not deck_id:
+        store.update_job(job["job_id"], notes="no uploaded deck recorded - upload first")
+        return {"job_id": job["job_id"], "status": "failed",
+                "error": "no uploaded deck recorded - upload the deck first"}
+    deck_name = job.get("deck_name") or build_deck_name(trunk["trunk_name"], job.get("effective_date"))
+    log.info("Assigning deck %s to %s ...", deck_id, trunk["trunk_name"])
+    try:
+        assigned = portal.assign_deck_to_trunk(trunk["carrier_id"], trunk["trunk_id"], deck_id,
+                                               expect_name=deck_name)
+        if not assigned.get("ok"):
+            raise RuntimeError("assign to trunk failed")
+    except Exception as exc:
+        log.error("Assign failed: %s", exc)
+        store.update_job(job["job_id"], status="uploaded", notes=f"assign failed: {exc}")
+        return {"job_id": job["job_id"], "status": "failed", "error": str(exc), "deck_id": deck_id}
+    log.info("Verified: deck %s is assigned to %s", deck_id, trunk["trunk_name"])
+    store.update_job(job["job_id"], status="assigned", deck_id=deck_id, deck_name=deck_name,
+                     notes=f"deck {deck_id} assigned to {trunk['trunk_name']}")
+    return {"job_id": job["job_id"], "status": "assigned", "deck_id": deck_id, "deck_name": deck_name}
+
+
+def upload_jobs(store: Store, portal, *, commit: bool, job_id: int | None = None) -> list[dict]:
+    """Upload step for dry_run job(s); dry-run prints the plan."""
     jobs = [store.get_job(job_id)] if job_id else store.list_jobs("dry_run")
     results = []
     for job in [job for job in jobs if job]:
-        if commit:
-            results.append(commit_job(store, portal, job))
-            continue
-        trunk = store.get_trunk(int(job["trunk_id"]))
-        plan = build_plan(store, trunk["trunk_name"], job["converted_path"])
-        results.append({"job_id": job["job_id"], "status": "dry_run",
-                        "deck_name": plan.deck_name, "rows": plan.rows})
+        if not commit:
+            trunk = store.get_trunk(int(job["trunk_id"]))
+            plan = build_plan(store, trunk["trunk_name"], job["converted_path"])
+            results.append({"job_id": job["job_id"], "status": "dry_run",
+                            "deck_name": plan.deck_name, "rows": plan.rows})
+        else:
+            results.append(upload_job(store, portal, job))
+    return results
+
+
+def assign_jobs(store: Store, portal, *, commit: bool, job_id: int | None = None) -> list[dict]:
+    """Assign step for uploaded job(s)."""
+    jobs = [store.get_job(job_id)] if job_id else store.list_jobs("uploaded")
+    results = []
+    for job in [job for job in jobs if job]:
+        if not commit:
+            results.append({"job_id": job["job_id"], "status": "uploaded",
+                            "deck_id": job.get("deck_id"), "deck_name": job.get("deck_name")})
+        else:
+            results.append(assign_job(store, portal, job))
     return results
 
 
@@ -240,15 +271,15 @@ def cmd_run(store: Store, args) -> int:
     return 0
 
 
-def cmd_push(store: Store, args) -> int:
+def cmd_upload(store: Store, args) -> int:
     portal_ctx = contextlib.nullcontext(None)
     if args.commit:
         from portal import Portal
         portal_ctx = Portal(headless=not args.headed)
     with portal_ctx as portal:
-        results = push_jobs(store, portal, commit=args.commit, job_id=args.job)
+        results = upload_jobs(store, portal, commit=args.commit, job_id=args.job)
     if not results:
-        print("nothing to push (no dry_run jobs) - run: python engine.py run")
+        print("nothing to upload (no dry_run jobs) - run: python engine.py run")
         return 0
     for item in results:
         if item["status"] == "refused":
@@ -258,6 +289,28 @@ def cmd_push(store: Store, args) -> int:
         else:
             print(f"#{item['job_id']} {item.get('deck_name', '')}: {item['status']} "
                   f"deck={item.get('deck_id')} {item.get('error', '')}".rstrip())
+    return 0
+
+
+def cmd_assign(store: Store, args) -> int:
+    portal_ctx = contextlib.nullcontext(None)
+    if args.commit:
+        from portal import Portal
+        portal_ctx = Portal(headless=not args.headed)
+    with portal_ctx as portal:
+        results = assign_jobs(store, portal, commit=args.commit, job_id=args.job)
+    if not results:
+        print("nothing to assign (no uploaded jobs) - upload a deck first")
+        return 0
+    for item in results:
+        if not args.commit:
+            print(f"DRY RUN #{item['job_id']}: deck {item.get('deck_id')} "
+                  f"{item.get('deck_name') or ''} [add --commit]")
+        elif item["status"] == "assigned":
+            print(f"#{item['job_id']} {item.get('deck_name', '')}: assigned deck={item.get('deck_id')}")
+        else:
+            print(f"#{item['job_id']} {item.get('deck_name', '')}: {item['status']} "
+                  f"{item.get('error', '')}".rstrip())
     return 0
 
 
@@ -278,15 +331,19 @@ def main(argv: list[str] | None = None) -> int:
     p_map.add_argument("trunk")
     p_run = sub.add_parser("run", help="convert + validate mapped jobs (dry run)")
     p_run.add_argument("--job", type=int)
-    p_push = sub.add_parser("push", help="upload dry_run jobs (dry-run unless --commit)")
-    p_push.add_argument("--job", type=int)
-    p_push.add_argument("--commit", action="store_true")
+    p_upload = sub.add_parser("upload", help="step 1: create the deck + upload the CSV (no assign)")
+    p_upload.add_argument("--job", type=int)
+    p_upload.add_argument("--commit", action="store_true")
+    p_assign = sub.add_parser("assign", help="step 2: assign an uploaded deck to its trunk")
+    p_assign.add_argument("--job", type=int)
+    p_assign.add_argument("--commit", action="store_true")
 
     args = parser.parse_args(argv)
     Path(config.INBOX_DIR).mkdir(parents=True, exist_ok=True)
     with Store.open(args.db) as store:
         return {"sync": cmd_sync, "scan": cmd_scan, "list": cmd_list,
-                "map": cmd_map, "run": cmd_run, "push": cmd_push}[args.command](store, args)
+                "map": cmd_map, "run": cmd_run, "upload": cmd_upload,
+                "assign": cmd_assign}[args.command](store, args)
 
 
 if __name__ == "__main__":
