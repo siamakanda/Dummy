@@ -64,16 +64,30 @@ def test_scan_map_run_push_dry(tmp_path, monkeypatch):
     assert store.get_job(job_id)["status"] == "dry_run"
 
 
-def test_upload_refuses_unapproved_trunk(tmp_path):
-    store = make_store(tmp_path)
-    job_id = store.add_job("file:z", file_path="z.csv", file_name="z.csv")
-    store.set_job_mapping(job_id, 82)                        # DW USA CONVO TRUNK 6060 - not dev/approved
+def test_upload_allowed_on_any_trunk(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)          # converted, dry_run
+    store.set_job_mapping(job_id, 82)                           # switch to a non-dev trunk
     store.update_job(job_id, status="dry_run")
+    portal = FakePortal()
 
-    results = engine.upload_jobs(store, object(), commit=True)  # portal unused: refused first
+    results = engine.upload_jobs(store, portal, commit=True, job_id=job_id)
+
+    assert results[0]["status"] == "uploaded"                   # upload is not gated
+    assert portal.created
+    store.close()
+
+
+def test_assign_refuses_unapproved_trunk(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)  # upload on dev trunk
+    store.set_job_mapping(job_id, 82)                           # now a non-dev/unapproved trunk
+    store.update_job(job_id, status="uploaded")
+
+    results = engine.assign_jobs(store, FakePortal(), commit=True, job_id=job_id)
 
     assert results[0]["status"] == "refused"
-    assert store.get_job(job_id)["status"] == "dry_run"
+    assert store.get_job(job_id)["status"] == "uploaded"        # unchanged
+    store.close()
 
 
 def _csrf(html: str) -> str:
@@ -199,8 +213,8 @@ def test_engine_web_dashboard_and_map(tmp_path):
     check.close()
 
 
-def test_engine_web_upload_refuses_unapproved_trunk(tmp_path):
-    """Upload must not launch a browser for a trunk it will refuse."""
+def test_engine_web_assign_refuses_unapproved_trunk(tmp_path):
+    """Assign must not launch a browser for a trunk it will refuse."""
     import engine_web
     from fastapi.testclient import TestClient
 
@@ -208,18 +222,18 @@ def test_engine_web_upload_refuses_unapproved_trunk(tmp_path):
     store = make_store(tmp_path)
     job_id = store.add_job("file:r", file_path="r.csv", file_name="r.csv")
     store.set_job_mapping(job_id, 82)                        # DW USA CONVO TRUNK 6060 - not dev/approved
-    store.update_job(job_id, status="dry_run")
+    store.update_job(job_id, status="uploaded", deck_id=999)
     store.close()
 
     client = TestClient(engine_web.create_app(db_path=db, secret="test-secret"))
     dash = client.get("/")
     assert "r.csv" in dash.text
 
-    response = client.post(f"/upload/{job_id}", data={"_csrf": _csrf(dash.text)})
+    response = client.post(f"/assign/{job_id}", data={"_csrf": _csrf(dash.text)})
     _wait_job(client, response)
 
     check = Store(db)
-    assert check.get_job(job_id)["status"] == "dry_run"      # refused: nothing written
+    assert check.get_job(job_id)["status"] == "uploaded"     # refused: still uploaded, not assigned
     check.close()
 
 

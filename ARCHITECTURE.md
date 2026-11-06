@@ -570,7 +570,8 @@ sync -> scan -> map -> convert (review) -> upload (create deck + CSV) -> assign 
 
 - `engine.py` — CLI: `sync` (trunks → SQLite), `scan` (`inbox/` → jobs), `map`, `run` (convert → dry-run),
   `upload` (**step 1: create the deck + upload the CSV**), `assign` (**step 2: wire the deck to the trunk**).
-  A failed upload deletes its orphan deck.
+  A failed upload deletes its orphan deck. **Upload is allowed on any trunk** (no billing impact);
+  **Assign is gated** to the dev trunk or an approved trunk.
 - `engine_web.py` — local dashboard on `127.0.0.1` (**no login**; CSRF kept) for the human file→trunk
   mapping, convert, upload and assign; action failures show as an on-page banner.
 - `inbox/` — the drop folder; jobs live in the `deck_jobs` table.

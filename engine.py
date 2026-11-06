@@ -176,11 +176,8 @@ def run_mapped(store: Store, job_id: int | None = None) -> list[dict]:
 
 
 def upload_job(store: Store, portal, job: dict) -> dict:
-    """Step 1: create the deck and upload the rates. Does NOT assign it to the trunk."""
+    """Step 1: create the deck and upload the rates. Does NOT touch a trunk, so any trunk is allowed."""
     trunk = store.get_trunk(int(job["trunk_id"]))
-    allowed, reason = commit_allowed(store, trunk)
-    if not allowed:
-        return {"job_id": job["job_id"], "status": "refused", "reason": reason}
     plan = build_plan(store, trunk["trunk_name"], job["converted_path"])
     deck_id = None
     try:
@@ -215,6 +212,9 @@ def assign_job(store: Store, portal, job: dict) -> dict:
         store.update_job(job["job_id"], notes="no uploaded deck recorded - upload first")
         return {"job_id": job["job_id"], "status": "failed",
                 "error": "no uploaded deck recorded - upload the deck first"}
+    allowed, reason = commit_allowed(store, trunk)      # assigning changes billing -> gate it
+    if not allowed:
+        return {"job_id": job["job_id"], "status": "refused", "reason": reason}
     deck_name = job.get("deck_name") or build_deck_name(trunk["trunk_name"], job.get("effective_date"))
     log.info("Assigning deck %s to %s ...", deck_id, trunk["trunk_name"])
     try:

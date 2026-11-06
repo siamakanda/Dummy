@@ -88,7 +88,7 @@ Secrets live only in `.env` (git-ignored). `.env.example` is the committed templ
 ## Safety model
 
 - **Dry-run by default** — writes require **Upload** / **Assign** (dashboard) or `--commit` (CLI).
-- **Allowed trunks only** — the development trunk `BTCL TNT TRUNK`, or a trunk a human approved.
+- **Assign is gated, Upload isn't** — `Upload` only creates a deck (no trunk/billing change), so any trunk is fine; `Assign` changes billing and is limited to `BTCL TNT TRUNK` or a human-approved trunk.
 - **Never guess** — an ambiguous trunk goes to a human, not a guess. Declared **trunk aliases** resolve
   known naming variants deterministically.
 - **No orphans from uploading** — a failed upload deletes its half-created deck; an uploaded-but-never-assigned deck is swept by `cleanup.py --orphans`.

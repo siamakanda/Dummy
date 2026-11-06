@@ -295,11 +295,6 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 if not job or not job["trunk_id"]:
                     jobs.flash("info", "Nothing to upload", "Convert a mapped deck first.")
                     return
-                allowed, _ = commit_allowed(store, store.get_trunk(int(job["trunk_id"])))
-                if not allowed:
-                    jobs.flash("warning", "Upload blocked",
-                               "This trunk isn't approved for automatic writes.")
-                    return
                 from portal import Portal
                 with Portal(headless=True) as portal:
                     results = engine.upload_jobs(store, portal, commit=True, job_id=job_id)
@@ -346,6 +341,9 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
                 if item.get("status") == "assigned":
                     jobs.flash("success", "Deck assigned",
                                f"{item.get('deck_name', 'The deck')} is now the rate deck on the trunk.")
+                elif item.get("status") == "refused":
+                    jobs.flash("warning", "Assign blocked",
+                               item.get("reason") or "This trunk isn't approved for automatic writes.")
                 else:
                     jobs.flash("error", "Assign failed",
                                item.get("error") or "The deck could not be assigned. It is still uploaded.")

@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M29 done · `pytest` → **175 passed** (offline)_
+_2026-11-04 · M1–M29 done · `pytest` → **176 passed** (offline)_
 
 ## TL;DR
 
@@ -408,4 +408,6 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
 - Dashboard: 7 stat cards incl. **Uploaded** and **Assigned**, an updated status filter, per-row
   **Upload to deck** / **Assign to trunk** buttons, and a `locked` mapping once uploaded.
 - CLI: `engine.py upload` (step 1) and `engine.py assign` (step 2); a failed upload deletes its orphan.
-- Verified: **175 tests**.
+- **Gate placement**: `Upload` runs on **any trunk** (it only creates a deck — no billing impact);
+  `Assign` is limited to the dev trunk or a human-approved trunk.
+- Verified: **176 tests**.
