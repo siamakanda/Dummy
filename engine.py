@@ -365,6 +365,38 @@ def verify_deck(store: Store, portal, job: dict) -> dict:
             "portal_status": found.get("status", "")}
 
 
+def redo_upload(store: Store, portal, job: dict) -> dict:
+    """Delete an uploaded (unassigned) deck and reset the job so it can be uploaded again."""
+    deck_id = job.get("deck_id")
+    if not deck_id:
+        return {"job_id": job["job_id"], "status": "skipped", "reason": "nothing uploaded to redo"}
+    if job.get("status") == "assigned":
+        return {"job_id": job["job_id"], "status": "refused",
+                "reason": "deck is assigned to a trunk - unassign it first"}
+    try:
+        if portal.deck_is_assigned(deck_id):
+            return {"job_id": job["job_id"], "status": "refused",
+                    "reason": "deck is assigned to a trunk - refusing to delete it"}
+    except Exception as exc:
+        return {"job_id": job["job_id"], "status": "failed",
+                "error": f"could not check assignment: {exc}"}
+    try:
+        portal.delete_rate_deck(deck_id)
+    except Exception as exc:
+        return {"job_id": job["job_id"], "status": "failed", "error": str(exc)}
+    has_date = bool(job.get("effective_date"))
+    store.update_job(job["job_id"], deck_id=None, deck_name=None, deck_created_at=None,
+                     status=("mapped" if has_date else "needs_date"),
+                     notes=f"redo: deleted deck {deck_id}")
+    _audit({"event": "redo", "job_id": job["job_id"], "file": job["file_name"],
+            "deck_id": deck_id, "trunk_id": job.get("trunk_id")})
+    if not has_date:
+        return {"job_id": job["job_id"], "status": "needs_date", "deleted": deck_id}
+    result = convert_job(store, store.get_job(job["job_id"]))
+    return {"job_id": job["job_id"], "status": result.get("status"), "deleted": deck_id,
+            **result}
+
+
 def upload_jobs(store: Store, portal, *, commit: bool, job_id: int | None = None) -> list[dict]:
     """Upload step for dry_run job(s); dry-run prints the plan."""
     jobs = [store.get_job(job_id)] if job_id else store.list_jobs("dry_run")
@@ -451,6 +483,26 @@ def cmd_assign(store: Store, args) -> int:
     return 0
 
 
+def cmd_redo(store: Store, args) -> int:
+    job = store.get_job(args.job)
+    if not job or not job.get("deck_id"):
+        print(f"nothing to redo for job #{args.job} (no uploaded deck)")
+        return 0
+    if not args.commit:
+        print(f"DRY RUN #{args.job}: would delete deck {job['deck_id']} "
+              f"({job.get('deck_name') or 'unnamed'}) and reset the job [add --commit]")
+        return 0
+    from portal import Portal
+    with Portal(headless=not args.headed) as portal:
+        result = redo_upload(store, portal, job)
+    if result["status"] in ("dry_run", "mapped", "needs_date"):
+        print(f"#{args.job}: deleted deck {result.get('deleted')} -> {result['status']} "
+              f"(upload again when ready)")
+        return 0
+    print(f"#{args.job}: {result['status']} - {result.get('reason') or result.get('error') or ''}")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Dummy core engine (folder-first).")
     parser.add_argument("--db", default=str(config.DB_PATH))
@@ -474,13 +526,16 @@ def main(argv: list[str] | None = None) -> int:
     p_assign = sub.add_parser("assign", help="step 2: assign an uploaded deck to its trunk")
     p_assign.add_argument("--job", type=int)
     p_assign.add_argument("--commit", action="store_true")
+    p_redo = sub.add_parser("redo", help="delete an uploaded (unassigned) deck and reset the job")
+    p_redo.add_argument("--job", type=int, required=True)
+    p_redo.add_argument("--commit", action="store_true")
 
     args = parser.parse_args(argv)
     Path(config.INBOX_DIR).mkdir(parents=True, exist_ok=True)
     with Store.open(args.db) as store:
         return {"sync": cmd_sync, "scan": cmd_scan, "list": cmd_list,
                 "map": cmd_map, "run": cmd_run, "upload": cmd_upload,
-                "assign": cmd_assign}[args.command](store, args)
+                "assign": cmd_assign, "redo": cmd_redo}[args.command](store, args)
 
 
 if __name__ == "__main__":

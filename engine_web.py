@@ -486,6 +486,38 @@ def create_app(*, db_path=None, secret=None) -> FastAPI:
 
         return {"job": jobs.start("Set effective date", work)}
 
+    @app.post("/redo/{job_id}")
+    async def redo_route(request: Request, job_id: int):
+        form = await request.form()
+        if not csrf_ok(request, form):
+            return PlainTextResponse("bad csrf", status_code=403)
+
+        def work():
+            store = Store.open(db_path)
+            try:
+                job = store.get_job(job_id)
+                if not job or not job.get("deck_id"):
+                    jobs.flash("info", "Nothing to redo", "This deck isn't uploaded yet.")
+                    return
+                from portal import Portal
+                with Portal(headless=True) as portal:
+                    result = engine.redo_upload(store, portal, job)
+            finally:
+                store.close()
+            status = result.get("status")
+            if status in ("dry_run", "mapped", "needs_date"):
+                jobs.flash("success", "Deck removed",
+                           f"Deck {result.get('deleted')} was deleted. Set the date (if needed) "
+                           "and upload again.")
+            elif status == "refused":
+                jobs.flash("warning", "Cannot redo",
+                           result.get("reason") or "The deck is assigned to a trunk.")
+            else:
+                jobs.flash("error", "Redo failed",
+                           result.get("error") or "Could not delete the deck.")
+
+        return {"job": jobs.start("Redo upload", work, write=True)}
+
     @app.get("/healthz")
     async def healthz():
         try:

@@ -51,6 +51,8 @@ summarises the result. Real writes happen only on **Upload** / **Assign** (or `-
   re-reads the switch to confirm the deck still exists and the name matches what we recorded.
 - **Effective date is never guessed** — if the email/file has no reliable date, the row shows **date
   needed** with a date input and a filename hint; Upload stays blocked until you set it.
+- **Redo** — an uploaded (not yet assigned) deck can be deleted and the job reset (to fix a wrong name or
+  date), then uploaded again. Assigned decks are never deleted.
 - **Live console overlay** — streams the engine’s log lines while a background job runs.
 - **Flash messages** — success / info / warning / error, with auto-dismiss.
 - Localhost only, **no login** (CSRF-protected), with a favicon.

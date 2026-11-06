@@ -1,6 +1,6 @@
 # Dummy — Status Report
 
-_2026-11-04 · M1–M31 done · `pytest` → **188 passed** (offline)_
+_2026-11-04 · M1–M32 done · `pytest` → **190 passed** (offline)_
 
 ## TL;DR
 
@@ -450,3 +450,15 @@ dry-run wrote nothing. Full plan in `.commandcode/plans/core-engine.md`.
   `apply_date` sets the date (`date_source="manual"`) and re-converts.
 - Orchestrator escalates to `needs_human`/`needs_date` instead of inventing a date.
 - Verified: **188 tests**.
+
+---
+
+## 32. Redo an upload (done)
+
+- `engine.redo_upload` deletes an uploaded deck and resets the job (`deck_id`/`deck_name`/created cleared;
+  `needs_date` if no date, else re-converted to `dry_run`).
+- **Refuses assigned decks** (checks `deck_is_assigned`) and any job already `assigned` — a live deck is
+  never deleted.
+- Dashboard **Redo** button on uploaded rows (with confirm) + CLI `python engine.py redo --job N --commit`.
+- Audit event `redo` records the deleted deck id.
+- Verified: **190 tests**.

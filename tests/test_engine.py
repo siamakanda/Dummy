@@ -158,6 +158,33 @@ def test_convert_needs_date_then_apply_date(tmp_path, monkeypatch):
     store.close()
 
 
+def test_redo_upload_deletes_unassigned_deck(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
+    portal = FakePortal()
+
+    result = engine.redo_upload(store, portal, store.get_job(job_id))
+
+    assert result["status"] == "dry_run"              # reconverted with its known date
+    assert portal.deleted == [999]
+    job = store.get_job(job_id)
+    assert job["deck_id"] is None and job["status"] == "dry_run"
+    store.close()
+
+
+def test_redo_refuses_assigned_deck(tmp_path, monkeypatch):
+    store, job_id = _mapped_job(tmp_path, monkeypatch)
+    engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
+    portal = FakePortal()
+    portal.deck_assigned = True
+
+    result = engine.redo_upload(store, portal, store.get_job(job_id))
+
+    assert result["status"] == "refused"
+    assert portal.deleted == []
+    store.close()
+
+
 def test_verify_deck_reports_presence_and_name(tmp_path, monkeypatch):
     store, job_id = _mapped_job(tmp_path, monkeypatch)
     engine.upload_jobs(store, FakePortal(), commit=True, job_id=job_id)
@@ -293,6 +320,7 @@ class FakePortal:
         self.created, self.uploaded, self.assigned, self.deleted = [], [], [], []
         self.upload_ok, self.assign_ok = upload_ok, assign_ok
         self.decks = []
+        self.deck_assigned = False
 
     def create_rate_deck(self, name, **kwargs):
         self.created.append((name, kwargs))
@@ -312,6 +340,9 @@ class FakePortal:
 
     def list_decks(self):
         return self.decks
+
+    def deck_is_assigned(self, deck_id):
+        return self.deck_assigned
 
 
 def _mapped_job(tmp_path, monkeypatch):

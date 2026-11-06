@@ -474,6 +474,12 @@
               </form>
               <span class="sub">approve, then assign</span>
               {% endif %}
+              <form class="inline" method="post" action="/redo/{{ job.job_id }}"
+                    data-confirm="Delete this uploaded deck on the switch and reset the job? Use this to fix a wrong name or date."
+                    data-deck="{{ job.deck_name or job.file_name }}" data-trunk="{{ job.trunk_label }}">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn">Redo</button>
+              </form>
             </div>
             {% elif job.status == 'assigned' %}
             <div class="actions">
